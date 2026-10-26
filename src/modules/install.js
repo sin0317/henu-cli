@@ -33,7 +33,10 @@ export function resolveNpmEntry({ execPath = process.execPath, npmExecpath = pro
 }
 
 export function normalizePathEntry(entry, platform = process.platform) {
-  const trimmed = entry.replace(/[\\/]+$/, '');
+  // 斜杠统一成反斜杠：用户手敲的 --prefix 常写 C:/Users/...，
+  // PATH 里存的是 C:\Users\...，不统一就会把同一个目录判成两个。
+  const unified = platform === 'win32' ? entry.replace(/\//g, '\\') : entry;
+  const trimmed = unified.replace(/[\\/]+$/, '');
   return platform === 'win32' ? trimmed.toLowerCase() : trimmed;
 }
 
@@ -61,6 +64,27 @@ export function defaultUserPrefix({ platform = process.platform, env = process.e
 export function globalBinPath(prefix, platform = process.platform) {
   if (!prefix) return null;
   return platform === 'win32' ? win32.join(prefix, `${BIN_NAME}.cmd`) : posix.join(prefix, 'bin', BIN_NAME);
+}
+
+/**
+ * 这个前缀里是不是已经装过本 CLI。
+ *
+ * 用来实现「上次装哪就继续装哪」：判断 PATH 只能看当前进程的 PATH，
+ * 而被 Agent/IDE 拉起时看到的 PATH 往往和用户自己终端里的不一样，
+ * 于是升级会散成两份（本机就出现过 0.3.0 与 0.4.0 并存、用户敲到的还是旧的）。
+ * 已经有安装记录的前缀比 PATH 推断更可信。
+ */
+export function findExistingPrefix(prefixes, { platform = process.platform, exists = existsSync } = {}) {
+  const seen = new Set();
+  for (const prefix of prefixes) {
+    if (!prefix) continue;
+    const key = normalizePathEntry(prefix, platform);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const bin = globalBinPath(prefix, platform);
+    if (bin && exists(bin)) return prefix;
+  }
+  return null;
 }
 
 export function resolveSkillTargets(target) {
@@ -111,7 +135,19 @@ export async function installGlobal(options = {}) {
     if (!prefix) {
       const defaultPrefix = await resolveGlobalPrefix(runNpm);
       const userPrefix = defaultUserPrefix({ platform });
-      if (isPrefixOnPath(defaultPrefix, { platform })) {
+
+      // 「上次装哪就还装哪」优先于 PATH 推断：
+      // 进程 PATH 不等于用户终端 PATH，升级散成多份比选错目录更麻烦。
+      // 两份都有安装时优先用户级前缀——它不随 Node 版本目录变（本机 node 在
+      // versions/22.22.2-6 下，一升级那个前缀就成孤儿了）。
+      const existing = findExistingPrefix([userPrefix, defaultPrefix], { platform });
+      if (existing) {
+        prefix = existing;
+        needsExplicitPrefix = existing !== defaultPrefix;
+        if (existing !== defaultPrefix) {
+          warnings.push(`沿用已有的安装目录 ${existing}（不重复安装到 ${defaultPrefix ?? '(未知)'}）`);
+        }
+      } else if (isPrefixOnPath(defaultPrefix, { platform })) {
         prefix = defaultPrefix;
       } else if (userPrefix !== defaultPrefix && isPrefixOnPath(userPrefix, { platform })) {
         prefix = userPrefix;

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   defaultUserPrefix,
+  findExistingPrefix,
   formatInstallText,
   globalBinPath,
   isPrefixOnPath,
@@ -97,4 +98,55 @@ test('formatInstallText 在跳过 skill 时说明原因', () => {
 
   assert.match(text, /不在 PATH 中/);
   assert.match(text, /未安装（--no-skill）/);
+});
+
+test('findExistingPrefix 找已经有 henu-cli 可执行文件的前缀', () => {
+  const SEP = String.fromCharCode(92); // 反斜杠：避免在源码里写转义，容易被工具改写
+  const same = (actual, expected) => actual.split(SEP).join('/').toLowerCase() === expected.toLowerCase();
+
+  const found = findExistingPrefix(['C:/node/npm', 'C:/Users/me/AppData/Roaming/npm'], {
+    platform: 'win32',
+    exists: (file) => same(file, 'C:/Users/me/AppData/Roaming/npm/henu-cli.cmd')
+  });
+  assert.equal(found, 'C:/Users/me/AppData/Roaming/npm');
+
+  assert.equal(
+    findExistingPrefix(['C:/a', 'C:/b'], { platform: 'win32', exists: () => false }),
+    null,
+    '都没有安装过时要返回 null，交给 PATH 推断'
+  );
+
+  assert.equal(
+    findExistingPrefix([null, undefined, ''], { platform: 'win32', exists: () => true }),
+    null,
+    '空前缀要跳过'
+  );
+});
+
+test('findExistingPrefix 不区分大小写、同一目录只查一次', () => {
+  const calls = [];
+  const found = findExistingPrefix(['C:/NPM', 'c:/npm'], {
+    platform: 'win32',
+    exists: (file) => {
+      calls.push(file);
+      return true;
+    }
+  });
+
+  assert.equal(found, 'C:/NPM');
+  assert.equal(calls.length, 1, '大小写不同但指向同一目录，只应检查一次');
+});
+
+test('normalizePathEntry 把正斜杠和反斜杠当同一个目录', () => {
+  const SEP = String.fromCharCode(92);
+  const withBackslashes = ['C:', 'Users', 'me', 'npm'].join(SEP);
+
+  assert.equal(normalizePathEntry(withBackslashes, 'win32'), 'c:' + SEP + 'users' + SEP + 'me' + SEP + 'npm');
+  assert.equal(
+    normalizePathEntry('C:/Users/me/npm', 'win32'),
+    normalizePathEntry(withBackslashes, 'win32'),
+    '正斜杠写法必须和反斜杠写法归一化到同一个值'
+  );
+  assert.equal(normalizePathEntry('C:/Users/me/npm/', 'win32'), normalizePathEntry('C:/Users/me/npm', 'win32'));
+  assert.equal(normalizePathEntry('/usr/local/bin/', 'linux'), '/usr/local/bin');
 });
