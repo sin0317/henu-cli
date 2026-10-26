@@ -59,6 +59,7 @@ henu-cli course today        # 今天的课
 henu-cli course next         # 下一节课：哪门、几点、在哪、还有多久（回答「我接下来上什么」优先用它）
 henu-cli course list         # 本学期全部课表
 henu-cli course list --weekday 3   # 只看周三（1=周一 … 7=周日）
+henu-cli course next --refresh     # 跳过本地缓存，强制回教务系统重取
 ```
 
 首次使用或 `auth status` 返回 `unauthenticated`：
@@ -77,6 +78,17 @@ henu-cli auth status         # 验证
 - 教务系统支持 CAS 单点：CLI 会自动点击登录页上的「统一认证登录」。
   所以用户只要在统一身份认证登录过，课表命令通常能直接跑。
 - 教务会话空闲会过期，但 CAS 会话还在，CLI 会自动重新单点，不需要用户再登一次。
+
+## 本地缓存（回答"数据新不新"必看）
+
+课表和成绩默认走本地缓存：课表保鲜 6 小时、成绩 12 小时，所以第二条命令通常 0.3 秒出结果。
+
+- 命中缓存时，JSON 里多一个 `cache: { hit: true, stale: false, ageSeconds, savedAt, ttlSeconds }`，
+  文本输出第一行会写「数据来自本地缓存（N 分钟前写入）」。
+- 抓取失败但手上有旧缓存时，**不会报错**，而是返回旧数据 + `cache.stale = true` + `warning` 字段，
+  文本首行是 `⚠ … 实时刷新失败`。向用户转述时**必须**说明数据可能不是最新。
+- 用户问"是不是最新的/刚改的课怎么没变"→ 加 `--refresh` 重跑，不要说系统坏了。
+- 用户问"缓存占多大/想清掉"→ `henu-cli cache status --text`、`henu-cli cache clear`。
 
 ## 输出约定
 
@@ -157,6 +169,7 @@ henu-cli grade list                 # 入学以来全部成绩（有效成绩 + 
 henu-cli grade audit                # 对照培养方案核对缺口
 henu-cli grade audit --text         # 人读核对表，适合直接念给用户
 henu-cli grade gpa                  # 平均学分绩点、加权平均分、按平台绩点（保研/评奖学金场景）
+henu-cli grade gpa --refresh        # 刚出分、怀疑缓存旧了时用
 ```
 
 `grade audit` 的关键字段：

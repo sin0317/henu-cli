@@ -5,6 +5,7 @@ import { HENU } from '../config.js';
 import { CURRICULUM } from '../curriculum.js';
 import { assertBrowserAvailable } from './browser.js';
 import { getLaunchOptions, importPlaywright } from './browser-options.js';
+import { CACHE_KEYS, CACHE_TTL, readThroughCache } from './cache.js';
 import {
   formatGradeText,
   parseGradeRows,
@@ -16,8 +17,28 @@ import {
 import { openJwPage, openJwTabApp } from './jw.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
+/**
+ * 成绩走本地缓存（默认保鲜 12 小时）。
+ * 出分是按批次推的，半天内重复查询拿到的内容基本一致；
+ * --refresh 可强制回教务系统重取，取失败时退回旧缓存并给出 warning。
+ */
+async function loadGradesCached(options = {}) {
+  const result = await readThroughCache({
+    key: CACHE_KEYS.grades,
+    ttlSeconds: CACHE_TTL.grades,
+    refresh: options.refresh === true,
+    loader: () => loadGrades(options)
+  });
+
+  return {
+    ...result.data,
+    cache: result.cache,
+    ...(result.warning ? { warning: result.warning } : {})
+  };
+}
+
 export async function getGradeList(options = {}) {
-  const loaded = await loadGrades(options);
+  const loaded = await loadGradesCached(options);
   const { records, summary } = loaded.parsed;
   const byCategory = summarizeByCategory(records);
   const totalCredits = sumCredits(records);
@@ -34,15 +55,19 @@ export async function getGradeList(options = {}) {
     weightedAverage: total?.average ?? null,
     byCategory,
     systemSummary: summary.lines,
+    cache: loaded.cache,
+    ...(loaded.warning ? { warning: loaded.warning } : {}),
     sourceUrl: loaded.sourceUrl
   };
 }
 
 export async function getGradeAudit(options = {}) {
-  const loaded = await loadGrades(options);
+  const loaded = await loadGradesCached(options);
   return {
     ...auditCredits(loaded.parsed.records, CURRICULUM),
     weightedAverage: loaded.parsed.summary.total?.average ?? null,
+    cache: loaded.cache,
+    ...(loaded.warning ? { warning: loaded.warning } : {}),
     sourceUrl: loaded.sourceUrl
   };
 }
@@ -89,12 +114,14 @@ export function summarizeGpa(records, summary) {
 }
 
 export async function getGradeGpa(options = {}) {
-  const loaded = await loadGrades(options);
+  const loaded = await loadGradesCached(options);
   const { records, summary } = loaded.parsed;
   return {
     scope: loaded.scope,
     ...summarizeGpa(records, summary),
     byCategory: summary.lines.filter((line) => line.name !== '合计'),
+    cache: loaded.cache,
+    ...(loaded.warning ? { warning: loaded.warning } : {}),
     sourceUrl: loaded.sourceUrl
   };
 }

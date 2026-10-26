@@ -82,9 +82,10 @@ skill 会拷到 `~/.workbuddy/skills/henu-cli-skill/`。**技能列表在会话�
 | `library search` / `account` / `seat` | 图书馆：馆藏检索、我的借阅、座位空闲 |
 | `install` | 全局安装 CLI + 随包 skill（一条命令装好） |
 | `skill path` / `install` | 只管理随包 skill |
+| `cache status` / `clear` | 看/清本地缓存（课表、成绩的离线副本） |
 
 常用参数：`--headed` 显示浏览器窗口排障，`--dump` 写诊断文件，`--weekday 1-7` 按星期过滤，
-`--text` 输出人类可读文本（默认是 JSON）。
+`--refresh` 跳过本地缓存强制重新抓取，`--text` 输出人类可读文本（默认是 JSON）。
 
 输出示例（真实数据）：
 
@@ -526,6 +527,40 @@ henu-cli library seat --day 2026-10-27 --campus 金明 --text
 
 `S40301 专业培养方案达成度`（`student/wsxk.pyfadb.html`）看起来更适合直接问"还差多少学分"，
 但河大这边打开就是「未设置学分要求」，所以本工具改成自己拿成绩单跟 `src/curriculum.js` 对账。
+
+## 本地缓存
+
+课表和成绩都要开浏览器、走单点登录、等 iframe 渲染，抓一次十几秒。这两个命令组默认
+先把结果存到 `~/.henu-cli/cache/`，下次直接读，实测：
+
+| 命令 | 首次（联网） | 再次（读缓存） |
+|---|---|---|
+| `course next` | 10.4s | **0.29s** |
+| `grade audit` | 12.3s | **0.29s** |
+
+```bash
+henu-cli course next                # 命中缓存，秒出
+henu-cli course next --refresh      # 强制回教务系统重取
+henu-cli cache status --text        # 缓存了什么、多久前写的、多大
+henu-cli cache clear                # 全清
+henu-cli cache clear --key grades   # 只清成绩
+```
+
+保鲜期：课表 **6 小时**、成绩 **12 小时**。过期后不会自动删，只是不再直接返回。
+
+### 三个设计取舍
+
+1. **过期不等于不能用。** 实时抓取失败（登录失效、校园网断了、页面改版）时，如果手上有旧缓存，
+   命令不会直接报错，而是返回旧数据 + 一行 `⚠ 数据取自 N 小时前的本地缓存（实时刷新失败）`。
+   这比"什么都看不到"有用，同时也没有假装数据是新的 —— 缓存元信息在 JSON 里是
+   `data.cache = { hit, stale, ageSeconds, savedAt, ttlSeconds }`。
+2. **坏缓存不会传染。** 文件被手工改坏、断电写了一半，`readCache` 一律返回 `null` 当没有缓存，
+   不抛异常；写入走「临时文件 + rename」，读不到半截 JSON。
+3. **缓存键会落成文件名，所以只保留安全字符**（`safeName`），`../../evil` 这类键名会被压成 `evil`
+   并老老实实落在缓存目录里。
+
+`--refresh` 与 `cache clear` 的区别：前者只让**这一次**查询重抓并覆盖缓存，后者是把文件删掉。
+两者结果一样，习惯用哪个都行。
 
 ## 结构
 

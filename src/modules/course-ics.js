@@ -14,7 +14,11 @@ export async function exportCourseIcs(options = {}) {
     throw missingStartError(null);
   }
 
-  const list = await getCourseList({ headless: options.headless, dump: options.dump });
+  const list = await getCourseList({
+    headless: options.headless,
+    dump: options.dump,
+    refresh: options.refresh
+  });
   const term = list.term ?? '';
   const resolved = resolveStart(options, term);
 

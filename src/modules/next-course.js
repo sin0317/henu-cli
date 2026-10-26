@@ -161,7 +161,11 @@ function isParts(value) {
 }
 
 export async function getNextCourse(options = {}) {
-  const list = await getCourseList({ headless: options.headless, dump: options.dump });
+  const list = await getCourseList({
+    headless: options.headless,
+    dump: options.dump,
+    refresh: options.refresh
+  });
   const termStart = lookupTermStart(list.term);
   const picked = pickNext(list.items, {
     termStart,
@@ -171,7 +175,9 @@ export async function getNextCourse(options = {}) {
   return {
     term: list.term ?? null,
     ...picked,
-    sourceUrl: list.sourceUrl
+    sourceUrl: list.sourceUrl,
+    cache: list.cache,
+    ...(list.warning ? { warning: list.warning } : {})
   };
 }
 

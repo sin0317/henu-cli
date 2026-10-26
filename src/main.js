@@ -5,6 +5,16 @@ import { fileURLToPath } from 'node:url';
 import { CURRICULUM } from './curriculum.js';
 import { getAuthStatus, loginWithBrowserProfile, logoutBrowserProfile } from './modules/auth.js';
 import { getBrowserStatus, selectBrowser, installManagedChromium } from './modules/browser.js';
+import {
+  CACHE_KEYS,
+  CACHE_TTL,
+  describeCache,
+  dropAllCache,
+  dropCache,
+  formatCacheListText,
+  listCache,
+  readCache
+} from './modules/cache.js';
 import { getCourseList, getCourseStatus, getTodayCourses, getTodayWeekday } from './modules/course.js';
 import { exportCourseIcs } from './modules/course-ics.js';
 import { formatCourseText } from './modules/course-parser.js';
@@ -62,11 +72,13 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
   browser install chromium --yes         安装 Playwright Chromium
 
 课表
-  course list [--weekday 1-7] [--headed] [--dump] [--text]
-  course today [--headed] [--dump] [--text] 只看今天的课
-  course next [--headed] [--dump] [--text]  下一节课是哪门、几点、在哪、还有多久
+  course list [--weekday 1-7] [--refresh] [--headed] [--dump] [--text]
+  course today [--refresh] [--headed] [--dump] [--text] 只看今天的课
+  course next [--refresh] [--headed] [--dump] [--text]
+             下一节课是哪门、几点、在哪、还有多久
+  (以上默认读本地缓存，保鲜 6 小时；--refresh 强制回教务系统重取)
   course ics [--start 2026-09-07 | --week-now 8] [--schedule auto|winter|summer]
-             [--out <文件>] [--text]
+             [--refresh] [--out <文件>] [--text]
              导出 .ics 日历（手机/电脑日历可直接导入）；
              第 1 周周一给过一次就按学期记在本地
   course status                          登录态与课表可读性检查
@@ -86,9 +98,10 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
   room options                           列出校区/教室类型/楼房的可用取值
 
 成绩与毕业学分
-  grade list [--headed] [--dump]          入学以来全部成绩（有效成绩、主修）
-  grade audit [--headed] [--dump] [--text] 对照培养方案核对毕业学分缺口
-  grade gpa [--headed] [--dump] [--text]   平均学分绩点、加权平均分、按平台绩点
+  grade list [--refresh] [--headed] [--dump]          入学以来全部成绩（有效成绩、主修）
+  grade audit [--refresh] [--headed] [--dump] [--text] 对照培养方案核对毕业学分缺口
+  grade gpa [--refresh] [--headed] [--dump] [--text]   平均学分绩点、加权平均分、按平台绩点
+  (成绩同样走本地缓存，保鲜 12 小时；--refresh 强制重取)
   grade plan                              打印内置的培养方案学分要求
 
 培养方案（任意专业 / 任意年级）
@@ -126,6 +139,12 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
                                          我的借阅：证件状态、可借数、当前借阅、借阅历史
   library seat [--day 2026-10-27] [--campus 金明|明伦] [--text]
                                          座位预约各校区/楼层空闲数
+
+本地缓存
+  cache status [--text]                  看缓存了哪些数据、多久前写的、占多大
+  cache clear [--key timetable|grades|all]
+                                         清缓存；课表/成绩下次查询会重新抓
+                                         想立刻拿最新数据也可以直接用 --refresh
 
 其他
   skill path                             打印随包 skill 路径
@@ -204,6 +223,9 @@ export async function run(argv) {
     case 'skill':
       return handleSkill(action, rest);
 
+    case 'cache':
+      return handleCache(action, argv);
+
     default:
       process.stderr.write(`未知命令：${domain}\n\n${HELP}`);
       return 2;
@@ -245,20 +267,21 @@ function handleAuth(action, rest, argv) {
 function handleCourse(action, rest, argv) {
   const options = {
     headless: !hasFlag(argv, '--headed'),
-    dump: hasFlag(argv, '--dump')
+    dump: hasFlag(argv, '--dump'),
+    refresh: hasFlag(argv, '--refresh')
   };
 
   if (action === 'list') {
     const query = { ...options, weekday: getOption(argv, '--weekday') };
     if (hasFlag(argv, '--text')) {
-      return emitText('course.list', () => getCourseList(query), formatCourseText);
+      return emitText('course.list', () => getCourseList(query), withCacheNote(formatCourseText, '课表'));
     }
     return emit('course.list', () => getCourseList(query));
   }
   if (action === 'today') {
     const query = { ...options, weekday: getTodayWeekday() };
     if (hasFlag(argv, '--text')) {
-      return emitText('course.today', () => getTodayCourses(options), formatCourseText, { weekday: getTodayWeekday() });
+      return emitText('course.today', () => getTodayCourses(options), withCacheNote(formatCourseText, '课表'), { weekday: getTodayWeekday() });
     }
     return emit('course.today', () => getTodayCourses(options), { weekday: getTodayWeekday() });
   }
@@ -277,7 +300,7 @@ function handleCourse(action, rest, argv) {
   }
   if (action === 'next') {
     if (hasFlag(argv, '--text')) {
-      return emitText('course.next', () => getNextCourse(options), formatNextCourseText);
+      return emitText('course.next', () => getNextCourse(options), withCacheNote(formatNextCourseText, '课表'));
     }
     return emit('course.next', () => getNextCourse(options));
   }
@@ -363,7 +386,8 @@ function handleRoom(action, rest, argv) {
 function handleGrade(action, rest, argv) {
   const options = {
     headless: !hasFlag(argv, '--headed'),
-    dump: hasFlag(argv, '--dump')
+    dump: hasFlag(argv, '--dump'),
+    refresh: hasFlag(argv, '--refresh')
   };
 
   if (action === 'plan') {
@@ -385,21 +409,21 @@ function handleGrade(action, rest, argv) {
 
   if (action === 'list') {
     if (hasFlag(argv, '--text')) {
-      return emitText('grade.list', () => getGradeList(options), formatGradeText);
+      return emitText('grade.list', () => getGradeList(options), withCacheNote(formatGradeText, '成绩'));
     }
     return emit('grade.list', () => getGradeList(options));
   }
 
   if (action === 'audit') {
     if (hasFlag(argv, '--text')) {
-      return emitText('grade.audit', () => getGradeAudit(options), formatAuditText);
+      return emitText('grade.audit', () => getGradeAudit(options), withCacheNote(formatAuditText, '成绩'));
     }
     return emit('grade.audit', () => getGradeAudit(options));
   }
 
   if (action === 'gpa') {
     if (hasFlag(argv, '--text')) {
-      return emitText('grade.gpa', () => getGradeGpa(options), formatGpaText);
+      return emitText('grade.gpa', () => getGradeGpa(options), withCacheNote(formatGpaText, '成绩'));
     }
     return emit('grade.gpa', () => getGradeGpa(options));
   }
@@ -567,6 +591,55 @@ function handleSkill(action, rest) {
     });
   }
   return usageError('skill 子命令：path | install [--target <name>|all]');
+}
+
+/**
+ * 文本输出顶部插一行「数据来自缓存 / 缓存已过期」的说明。
+ * 只有真的走了缓存才会插，实时抓取时输出和以前完全一样。
+ */
+function withCacheNote(formatter, label) {
+  return (data) => {
+    const note = describeCache(data?.cache, { label });
+    const text = formatter(data);
+    return note ? `${note}\n\n${text}` : text;
+  };
+}
+
+function handleCache(action, argv) {
+  if (action === 'status' || action === undefined) {
+    if (hasFlag(argv, '--text')) {
+      return emitText('cache.status', async () => listCache(), formatCacheListText);
+    }
+    return emit('cache.status', async () => {
+      const entries = listCache();
+      return {
+        dir: '~/.henu-cli/cache',
+        count: entries.length,
+        ttl: CACHE_TTL,
+        entries: entries.map((entry) => ({
+          ...entry,
+          ttlSeconds: CACHE_TTL[entry.key] ?? null
+        }))
+      };
+    });
+  }
+
+  if (action === 'clear') {
+    const key = getOption(argv, '--key') ?? 'all';
+    const known = Object.values(CACHE_KEYS);
+    if (key !== 'all' && !known.includes(key)) {
+      return usageError(`--key 只能是 ${known.join(' | ')} 或 all`);
+    }
+    if (key === 'all') {
+      return emit('cache.clear', async () => ({ cleared: 'all', removed: dropAllCache() }));
+    }
+    return emit('cache.clear', async () => {
+      const existed = Boolean(readCache(key));
+      return { cleared: key, removed: dropCache(key) ? 1 : 0, existed };
+    });
+  }
+
+  return usageError('cache 子命令：status [--text] | clear [--key timetable|grades|all]');
 }
 
 async function emit(command, task, meta = {}) {

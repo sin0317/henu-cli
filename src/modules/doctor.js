@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, accessSync, constants } from 'node:fs';
 
 import { HENU } from '../config.js';
 import { getBrowserStatus, getSelectedBrowser } from './browser.js';
+import { formatAge, listCache } from './cache.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 const MIN_NODE_MAJOR = 20;
@@ -14,6 +15,7 @@ export async function getDoctorReport(options = {}) {
   checks.push(checkBrowser());
   checks.push(checkProfile());
   checks.push(checkHomeWritable());
+  checks.push(checkCache());
   checks.push(...await checkNetwork());
 
   const failed = checks.filter((check) => !check.ok);
@@ -24,6 +26,32 @@ export async function getDoctorReport(options = {}) {
       failed: failed.map((check) => check.id)
     },
     ...(options.verbose ? { home: getHenuHome(), profile: getProfilePath(getSelectedBrowser().id) } : {})
+  };
+}
+
+/**
+ * 缓存不是「必须项」：没有缓存照样能用，只是第一次查询更慢。
+ * 所以这项永远 ok，只把「有哪些数据、多久前的」说清楚，
+ * 免得用户看到旧数据却不知道旧到什么程度。
+ */
+function checkCache() {
+  const entries = listCache();
+  if (entries.length === 0) {
+    return { id: 'cache', ok: true, detail: '暂无本地缓存（首次查询会现抓）' };
+  }
+
+  const summary = entries
+    .map((entry) => `${entry.key} ${entry.readable ? formatAge(entry.ageSeconds) : '文件损坏'}前`)
+    .join(' · ');
+
+  const broken = entries.filter((entry) => !entry.readable);
+  return {
+    id: 'cache',
+    ok: true,
+    detail: `${entries.length} 项本地缓存（${summary}）`,
+    ...(broken.length > 0
+      ? { hint: `有 ${broken.length} 个缓存文件读不出来，运行 henu-cli cache clear 重建即可。` }
+      : {})
   };
 }
 

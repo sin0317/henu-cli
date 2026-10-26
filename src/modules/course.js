@@ -4,12 +4,13 @@ import { join } from 'node:path';
 import { HENU } from '../config.js';
 import { assertBrowserAvailable } from './browser.js';
 import { getLaunchOptions, importPlaywright } from './browser-options.js';
+import { CACHE_KEYS, CACHE_TTL, readThroughCache } from './cache.js';
 import { extractTerm, filterByWeekday, parseTimetableTable } from './course-parser.js';
 import { openJwMenuApp, openJwPage } from './jw.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 export async function getCourseList(options = {}) {
-  const loaded = await loadTimetable(options);
+  const loaded = await loadTimetableCached(options);
   const items = parseTimetableTable(loaded.table.header, loaded.table.rows);
 
   const filtered = filterByWeekday(items, options.weekday);
@@ -20,7 +21,33 @@ export async function getCourseList(options = {}) {
     items: filtered,
     total: filtered.length,
     ...(items.length === 0 ? { note: '页面已打开，但当前学期没有解析到课程记录。' } : {}),
-    sourceUrl: loaded.table.sourceUrl
+    sourceUrl: loaded.table.sourceUrl,
+    cache: loaded.cache,
+    ...(loaded.warning ? { warning: loaded.warning } : {})
+  };
+}
+
+/**
+ * 课表走本地缓存（默认保鲜 6 小时）。
+ * 调课/补课不频繁，6 小时内重复查询没必要反复开浏览器；
+ * 真要最新数据用 --refresh，抓取失败时会退回旧缓存并给出 warning。
+ */
+async function loadTimetableCached(options = {}) {
+  const result = await readThroughCache({
+    key: CACHE_KEYS.timetable,
+    ttlSeconds: CACHE_TTL.timetable,
+    refresh: options.refresh === true,
+    // pageState 里是大段页面文本，只缓存解析需要的表格和学期
+    loader: async () => {
+      const fresh = await loadTimetable(options);
+      return { table: fresh.table, term: fresh.term };
+    }
+  });
+
+  return {
+    ...result.data,
+    cache: result.cache,
+    ...(result.warning ? { warning: result.warning } : {})
   };
 }
 

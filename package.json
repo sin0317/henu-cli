@@ -1,6 +1,6 @@
 {
   "name": "henu-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "面向 AI Agent 的河南大学校园服务 CLI：课表与下一节课、空教室、成绩与学分绩点、培养方案、公文通、图书馆",
   "type": "module",
   "bin": {
