@@ -18,6 +18,7 @@ import {
   resolveWeekdayRange,
   roomGridForWeekday
 } from './room-parser.js';
+import { getRequestId } from './output.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 export async function getFreeRooms(options = {}) {
@@ -459,6 +460,7 @@ function dumpDiagnostics({ pageState, nav, overrides, periods, responses, groups
   mkdirSync(home, { recursive: true });
   const file = join(home, 'diagnostics-room.json');
   writeFileSync(file, `${JSON.stringify({
+    requestId: getRequestId(),
     finalUrl: pageState.url,
     nav,
     overrides,

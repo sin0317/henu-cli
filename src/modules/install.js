@@ -194,7 +194,11 @@ async function packTarball(runNpm, destination) {
   const entries = await readdir(destination);
   const tarball = entries.find((name) => name.endsWith('.tgz'));
   if (!tarball) {
-    throw new Error('npm pack 没有产出 .tgz');
+    const error = new Error('npm pack 没有产出 .tgz 包');
+    error.code = 'INSTALL_FAILED';
+    error.hint = '先在包目录手动运行 npm pack --dry-run 看具体报错：常见原因是磁盘空间不足，'
+      + '或 package.json 的 files 字段把 src/ 排除了。';
+    throw error;
   }
   return join(destination, tarball);
 }

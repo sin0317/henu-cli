@@ -3,6 +3,11 @@
 [![test](https://github.com/sin0317/henu-cli/actions/workflows/test.yml/badge.svg)](https://github.com/sin0317/henu-cli/actions/workflows/test.yml)
 [![npm](https://img.shields.io/npm/v/henu-cli.svg)](https://www.npmjs.com/package/henu-cli)
 
+> **非官方项目 · 学生自建** —— 与河南大学及其教务处、图书馆、网络中心无隶属关系，不代表学校立场。
+>
+> 工具只读取**你自己**登录后能看到的页面，不保存账号密码、不绕过验证码、不做任何写操作。
+> 使用校园系统时请遵守学校相关规定；因使用本工具产生的后果由使用者自行承担。
+
 面向 AI Agent 的河南大学校园服务命令行工具。设计参考 [szu-cli](https://github.com/AwesomeHou/szu-cli)（MIT）。
 
 - 不保存账号密码：登录由你在浏览器里完成，CLI 只复用本地持久化 profile
@@ -598,6 +603,61 @@ src/
     skill.js          skill 分发
     output.js         JSON 信封
 ```
+
+## 出错了怎么看
+
+所有响应（成功也是）都带 `meta.requestId`，形如 `req_mvp8bqv30123e3`：
+
+- 前 8 位是毫秒时间戳（base36），按字符串排序就是时间顺序
+- 中间 2 位是进程内序号，同一毫秒连续多次调用不会撞
+- 后 4 位随机，兜住「同一毫秒、两个进程各自生成」
+
+**一次命令执行 = 一个 id**：`--dump` 写出的诊断文件和最终响应共用同一个 id，所以能对上。
+
+```bash
+henu-cli course list --dump
+# 响应里                  meta.requestId = req_mvp8bqv30123e3
+# 诊断文件里              requestId     = req_mvp8bqv30123e3
+# 文件位置                ~/.henu-cli/diagnostics-course.json
+```
+
+报障贴这四行就够：
+
+```
+code      PAGE_UNRECOGNIZED
+message   打开了课表页，但没找到表格
+hint      加 --dump 重跑一次，把 ~/.henu-cli/diagnostics-*.json 和 meta.requestId 一起提给维护者
+requestId req_mvp8bqv30123e3
+```
+
+### 错误里一定有「下一步」
+
+`error.hint` 不是可选项。已知错误码各自写了具体建议；漏写和未知异常会兜底成
+「加 `--dump` 重跑 + 带上 requestId」。参数类错误（`INVALID_ARGUMENT`）兜底则指向
+`--help`，不会让人去翻诊断文件。这条有测试守着（`test/output.test.js`）。
+
+`--text` 模式下出错会先往 **stderr** 打一段人读说明，stdout 仍保留 JSON：
+
+```
+✗ 出错：INVALID_ARGUMENT
+  需要检索词。
+  下一步：例如：henu-cli library search 药物化学 --field title
+  对账 id：req_mvp8cf1z010087（报障时把这个和 --dump 生成的诊断文件一起贴上）
+```
+
+这样 `--text` 不会一报错就退回 JSON，脚本也仍能解析 stdout。
+
+### 退出码
+
+| 码 | 含义 |
+|---|---|
+| 0 | 成功 |
+| 1 | 其他错误 |
+| 2 | 参数错误（`INVALID_ARGUMENT` / `BROWSER_SELECTION_INVALID`） |
+| 3 | 需要登录（`AUTH_REQUIRED`） |
+| 4 | 环境问题（浏览器不可用、Playwright 缺失、安装失败） |
+| 5 | 页面结构不认识（`PAGE_UNRECOGNIZED`，多半是改版） |
+| 6 | 培养方案不存在（`PLAN_NOT_FOUND`） |
 
 ## 改版了怎么办
 

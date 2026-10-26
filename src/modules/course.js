@@ -7,6 +7,7 @@ import { getLaunchOptions, importPlaywright } from './browser-options.js';
 import { CACHE_KEYS, CACHE_TTL, readThroughCache } from './cache.js';
 import { extractTerm, filterByWeekday, parseTimetableTable } from './course-parser.js';
 import { openJwMenuApp, openJwPage } from './jw.js';
+import { getRequestId } from './output.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 export async function getCourseList(options = {}) {
@@ -193,6 +194,7 @@ function dumpDiagnostics({ pageState, nav, table, frameUrls }) {
   mkdirSync(home, { recursive: true });
   const file = join(home, 'diagnostics-course.json');
   writeFileSync(file, `${JSON.stringify({
+    requestId: getRequestId(),
     finalUrl: pageState.url,
     title: pageState.title,
     nav,

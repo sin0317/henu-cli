@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { collectList, firstPositional, getOption, hasFlag } from './modules/args.js';
 import { CURRICULUM } from './curriculum.js';
 import { getAuthStatus, loginWithBrowserProfile, logoutBrowserProfile } from './modules/auth.js';
 import { getBrowserStatus, selectBrowser, installManagedChromium } from './modules/browser.js';
@@ -34,7 +35,7 @@ import {
   listNotices,
   searchNotices
 } from './modules/notice.js';
-import { errorEnvelope, successEnvelope, toErrorShape, writeJson } from './modules/output.js';
+import { beginRun, errorEnvelope, formatErrorText, successEnvelope, toErrorShape, writeJson } from './modules/output.js';
 import {
   auditPlan,
   formatPlanAuditText,
@@ -159,6 +160,9 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
 `;
 
 export async function run(argv) {
+  // 一次命令一个对账 id：诊断文件与最终响应共用同一个，用户贴出来能对上。
+  beginRun();
+
   const packageInfo = await readPackageInfo();
 
   if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
@@ -237,7 +241,7 @@ function handleBrowser(action, rest, argv) {
     return emit('browser.status', () => getBrowserStatus());
   }
   if (action === 'use') {
-    return emit('browser.use', () => selectBrowser(rest[0]));
+    return emit('browser.use', () => selectBrowser(firstPositional(rest)));
   }
   if (action === 'install' && rest.includes('chromium')) {
     return emit('browser.install', () => installManagedChromium({ yes: hasFlag(argv, '--yes') }));
@@ -510,7 +514,7 @@ function handleNotice(action, rest, argv) {
 
   if (action === 'search') {
     const options = {
-      keyword: rest[0] ?? getOption(argv, '--keyword'),
+      keyword: firstPositional(rest) ?? getOption(argv, '--keyword'),
       channel: getOption(argv, '--channel'),
       limit: getOption(argv, '--limit'),
       pages: getOption(argv, '--pages'),
@@ -524,7 +528,7 @@ function handleNotice(action, rest, argv) {
   }
 
   if (action === 'show') {
-    const options = { url: getOption(argv, '--url') ?? rest[0] };
+    const options = { url: getOption(argv, '--url') ?? firstPositional(rest) };
     if (hasFlag(argv, '--text')) {
       return emitText('notice.show', () => getNotice(options), formatNoticeText, meta);
     }
@@ -537,7 +541,7 @@ function handleNotice(action, rest, argv) {
 function handleLibrary(action, rest, argv) {
   if (action === 'search') {
     const options = {
-      keyword: rest[0] ?? getOption(argv, '--keyword'),
+      keyword: firstPositional(rest) ?? getOption(argv, '--keyword'),
       field: getOption(argv, '--field'),
       rows: getOption(argv, '--rows'),
       page: getOption(argv, '--page')
@@ -659,7 +663,11 @@ async function emitText(command, task, formatter = summarizeRooms, meta = {}) {
     process.stdout.write(`${formatter(data)}\n`);
     return 0;
   } catch (error) {
-    writeJson(errorEnvelope(toErrorShape(error), { command, ...meta }));
+    const envelope = errorEnvelope(toErrorShape(error), { command, ...meta });
+    // --text 的语义是「人读」，出错却甩一段 JSON 说不过去：
+    // stderr 给人一句带下一步的说明，stdout 仍保留 JSON 供脚本解析。
+    process.stderr.write(`${formatErrorText(envelope)}\n`);
+    writeJson(envelope);
     return error instanceof Error ? exitCodeFor(error.code) : 1;
   }
 }
@@ -688,31 +696,6 @@ function exitCodeFor(code) {
 function usageError(message) {
   process.stderr.write(`${message}\n`);
   return 2;
-}
-
-function hasFlag(argv, flag) {
-  return argv.includes(flag);
-}
-
-function getOption(argv, name) {
-  const index = argv.indexOf(name);
-  if (index === -1) {
-    return undefined;
-  }
-  const value = argv[index + 1];
-  return value && !value.startsWith('--') ? value : undefined;
-}
-
-// --items 支持逗号分隔，也支持重复出现多次
-function collectList(argv, name) {
-  const out = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] !== name) continue;
-    const value = argv[index + 1];
-    if (!value || value.startsWith('--')) continue;
-    out.push(...value.split(/[,，]/).map((item) => item.trim()).filter(Boolean));
-  }
-  return out;
 }
 
 async function readPackageInfo() {

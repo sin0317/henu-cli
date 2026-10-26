@@ -7,6 +7,7 @@ import { assertBrowserAvailable } from './browser.js';
 import { getLaunchOptions, importPlaywright } from './browser-options.js';
 import { openJwPage, openJwTabApp } from './jw.js';
 import { round, groupPlan, parsePlanRows, formatPlanText } from './plan-parser.js';
+import { getRequestId } from './output.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 // 教务系统的「专业培养方案达成度」页可以选任意 院系 / 专业 / 年级，
@@ -436,7 +437,8 @@ export function dumpPlanDiagnostics(frameRows) {
   const home = getHenuHome();
   mkdirSync(home, { recursive: true });
   const file = join(home, 'diagnostics-plan.json');
-  writeFileSync(file, `${JSON.stringify(frameRows, null, 2)}\n`, 'utf8');
+  // 原来是裸数组，包一层才能带上 requestId（只能靠它把 dump 和报错对上）
+  writeFileSync(file, `${JSON.stringify({ requestId: getRequestId(), frames: frameRows }, null, 2)}\n`, 'utf8');
   return file;
 }
 

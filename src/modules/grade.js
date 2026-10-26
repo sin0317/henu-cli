@@ -15,6 +15,7 @@ import {
   summarizeByCategory
 } from './grade-parser.js';
 import { openJwPage, openJwTabApp } from './jw.js';
+import { getRequestId } from './output.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 /**
@@ -390,6 +391,7 @@ function dumpDiagnostics({ pageState, nav, scope, tables, html }) {
   mkdirSync(home, { recursive: true });
   const file = join(home, 'diagnostics-grade.json');
   writeFileSync(file, `${JSON.stringify({
+    requestId: getRequestId(),
     finalUrl: pageState.url,
     title: pageState.title,
     nav,

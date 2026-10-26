@@ -8,6 +8,9 @@ description: 河南大学校园服务命令行工具的使用指南。当用户�
 `henu-cli` 把河南大学校园网页能力封装成稳定命令，输出结构化 JSON。
 登录由用户在浏览器里完成，CLI 复用本地 profile，不保存账号密码。
 
+> **非官方工具**：与河南大学及其教务处、图书馆无隶属关系，不代表学校立场。
+> 用户问起「这是学校官方的吗」时要明确说明这一点，不要暗示官方背书。
+
 ## 何时使用
 
 - 用户问"今天有什么课""这学期课表""哪几节课""这门课在哪个教室"
@@ -94,7 +97,7 @@ henu-cli auth status         # 验证
 
 ```json
 { "ok": true, "data": { "term": "2026-2027学年第一学期", "items": [], "total": 0 },
-  "meta": { "cli": "henu-cli", "command": "course.list" } }
+  "meta": { "cli": "henu-cli", "command": "course.list", "requestId": "req_mvp8bqv30123e3" } }
 ```
 
 课表 item 结构：`courseCode`、`courseName`、`className`、`credits`、`teachers[]`、
@@ -267,7 +270,15 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 
 `library account` 需要登录态（复用浏览器里的 CAS 会话）；`library search` / `seat` 是公开接口，很快。
 
-## 错误码处理
+## 错误码处理与报障
+
+失败响应里 `error.hint` **一定有内容**，它就是「下一步做什么」。转述给用户时要说 hint，
+不能只说「命令失败了」。漏写或未知异常会被兜底成「加 `--dump` + 带上 requestId」。
+
+`meta.requestId`（形如 `req_mvp8cf1z010087`）是这次执行的对账 id，`--dump` 写出的诊断文件里
+有同一个值。用户报「老是报错」时，把 code 和 requestId 一起写进回复，维护者能定位到具体那次运行。
+
+用 `--text` 时要清楚：出错时**人读说明在 stderr、JSON 在 stdout**，两边都有内容不是重复报错。
 
 | code | 含义 | 你该做什么 |
 |---|---|---|

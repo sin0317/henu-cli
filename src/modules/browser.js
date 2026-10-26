@@ -72,7 +72,11 @@ export function getBrowserStatus(options = {}) {
 export function selectBrowser(browser, options = {}) {
   const id = normalizeBrowserId(browser);
   if (!id) {
-    throwCliError('BROWSER_SELECTION_INVALID', `浏览器只能是 ${BROWSER_IDS.join(' / ')}。`);
+    throwCliError(
+      'BROWSER_SELECTION_INVALID',
+      `浏览器只能是 ${BROWSER_IDS.join(' / ')}。`,
+      `可选值：${BROWSER_IDS.join(' / ')}。例如 henu-cli browser use chrome；不带参数运行 henu-cli browser status 看当前用的是哪个。`
+    );
   }
 
   const env = options.env ?? process.env;
@@ -118,7 +122,11 @@ export async function installManagedChromium(options = {}) {
     const answer = await prompt.question('将下载 Playwright Chromium，继续？[y/N] ');
     prompt.close();
     if (!/^y(es)?$/i.test(answer.trim())) {
-      throwCliError('BROWSER_INSTALL_CANCELLED', '已取消安装。');
+      throwCliError(
+        'BROWSER_INSTALL_CANCELLED',
+        '已取消安装。',
+        '仍然想装就重跑 henu-cli browser install chromium --yes；也可以直接装 Chrome 或 Edge，用 henu-cli browser use chrome 切过去。'
+      );
     }
   }
 
@@ -126,7 +134,11 @@ export async function installManagedChromium(options = {}) {
   try {
     cliPath = join(dirname(require.resolve('playwright/package.json')), 'cli.js');
   } catch {
-    throwCliError('BACKEND_UNAVAILABLE', 'Playwright 未安装，请先在项目目录执行 npm install。');
+    throwCliError(
+      'BACKEND_UNAVAILABLE',
+      'Playwright 未安装。',
+      '全局安装的 CLI 不该缺这个依赖：重跑 npx henu-cli@latest install 修复；在源码目录里开发则执行 npm install。'
+    );
   }
 
   await runCommand(process.execPath, [cliPath, 'install', 'chromium']);
