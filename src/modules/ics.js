@@ -267,7 +267,7 @@ function describe(item, session, run, clock) {
   return parts.filter(Boolean).join('\n');
 }
 
-function seasonOf(isoDate) {
+export function seasonOf(isoDate) {
   const month = Number(isoDate.slice(5, 7));
   // 5 月 1 日 ~ 9 月 30 日 执行夏季作息
   return month >= 5 && month <= 9 ? 'summer' : 'winter';

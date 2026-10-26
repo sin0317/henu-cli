@@ -11,9 +11,10 @@ import { formatCourseText } from './modules/course-parser.js';
 import { formatIcsSummaryText } from './modules/ics.js';
 import { getDoctorReport } from './modules/doctor.js';
 import { formatExamTabsText, getExamCapabilities } from './modules/exam.js';
-import { formatAuditText, formatGradeText, getGradeAudit, getGradeList } from './modules/grade.js';
+import { formatAuditText, formatGpaText, formatGradeText, getGradeAudit, getGradeGpa, getGradeList } from './modules/grade.js';
 import { formatInstallText, installGlobal, resolveSkillTargets } from './modules/install.js';
 import { getLibraryAccount, getSeatAvailability, searchLibrary } from './modules/library.js';
+import { formatNextCourseText, getNextCourse } from './modules/next-course.js';
 import { formatAccountText, formatSearchText, formatSeatText } from './modules/library-parser.js';
 import {
   formatNoticeListText,
@@ -63,6 +64,7 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
 课表
   course list [--weekday 1-7] [--headed] [--dump] [--text]
   course today [--headed] [--dump] [--text] 只看今天的课
+  course next [--headed] [--dump] [--text]  下一节课是哪门、几点、在哪、还有多久
   course ics [--start 2026-09-07 | --week-now 8] [--schedule auto|winter|summer]
              [--out <文件>] [--text]
              导出 .ics 日历（手机/电脑日历可直接导入）；
@@ -86,6 +88,7 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
 成绩与毕业学分
   grade list [--headed] [--dump]          入学以来全部成绩（有效成绩、主修）
   grade audit [--headed] [--dump] [--text] 对照培养方案核对毕业学分缺口
+  grade gpa [--headed] [--dump] [--text]   平均学分绩点、加权平均分、按平台绩点
   grade plan                              打印内置的培养方案学分要求
 
 培养方案（任意专业 / 任意年级）
@@ -272,10 +275,16 @@ function handleCourse(action, rest, argv) {
     }
     return emit('course.ics', () => exportCourseIcs(query));
   }
+  if (action === 'next') {
+    if (hasFlag(argv, '--text')) {
+      return emitText('course.next', () => getNextCourse(options), formatNextCourseText);
+    }
+    return emit('course.next', () => getNextCourse(options));
+  }
   if (action === 'status') {
     return emit('course.status', () => getCourseStatus({ headless: true }));
   }
-  return usageError('course 子命令：list | today | ics | status');
+  return usageError('course 子命令：list | today | next | ics | status');
 }
 
 function handleRoom(action, rest, argv) {
@@ -388,7 +397,14 @@ function handleGrade(action, rest, argv) {
     return emit('grade.audit', () => getGradeAudit(options));
   }
 
-  return usageError('grade 子命令：list | audit | plan');
+  if (action === 'gpa') {
+    if (hasFlag(argv, '--text')) {
+      return emitText('grade.gpa', () => getGradeGpa(options), formatGpaText);
+    }
+    return emit('grade.gpa', () => getGradeGpa(options));
+  }
+
+  return usageError('grade 子命令：list | audit | gpa | plan');
 }
 
 function handlePlan(action, rest, argv) {

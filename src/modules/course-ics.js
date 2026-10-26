@@ -86,6 +86,11 @@ function recallTermStart(term) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? '')) ? value : null;
 }
 
+/** 给「下一节课」这类不导出日历的命令复用同一份学期起点缓存。 */
+export function lookupTermStart(term) {
+  return recallTermStart(term);
+}
+
 function rememberTermStart(term, startDate) {
   if (!term) return;
   const existing = readCache();

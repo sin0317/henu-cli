@@ -25,6 +25,9 @@ node src/cli.js course today
 npx -y github:sin0317/henu-cli install
 ```
 
+> 包已配置好 npm 发布元数据（`publishConfig` 指向 registry.npmjs.org，`prepublishOnly` 会先跑测试），
+> 但还没执行过 `npm publish`，所以现阶段的 `npx henu-cli@latest install` 会 404，请用上面的 `github:` 写法。
+
 它会做三件事：把 CLI 装进 npm 全局前缀、自动挑一个**已经在 PATH 上**的前缀（Windows 下默认目录不可见时改投 `%APPDATA%\npm`）、把随包 skill 拷到 `~/.workbuddy/skills/`。
 
 常用变体：
@@ -64,9 +67,9 @@ skill 会拷到 `~/.workbuddy/skills/henu-cli-skill/`。**技能列表在会话�
 | `doctor` | 检查 Node、Playwright、浏览器、网络连通性 |
 | `auth login` / `status` / `logout` | 登录、检查、清除登录态 |
 | `browser status` / `use` / `install chromium` | 浏览器后端管理 |
-| `course list` / `today` / `ics` / `status` | 课表查询、导出 .ics 日历、可读性检查 |
+| `course list` / `today` / `next` / `ics` / `status` | 课表查询、下一节课、导出 .ics 日历、可读性检查 |
 | `room free` / `options` | 空闲教室查询 |
-| `grade list` / `audit` / `plan` | 成绩明细、毕业学分核对、培养方案要求 |
+| `grade list` / `gpa` / `audit` / `plan` | 成绩明细、学分绩点、毕业学分核对、培养方案要求 |
 | `plan depts` / `majors` / `show` / `audit` | 全校任意专业、任意年级的培养方案与学分核对 |
 | `second standard` / `check` | 第二课堂专项学分标准与达标核对 |
 | `exam tabs` | 列出「课程考试」模块的真实入口（河大没有考试安排查询） |
@@ -594,6 +597,27 @@ henu-cli grade audit --headed --dump
 - 默认只读，不做高频抓取
 - 状态变更类命令必须先支持 `--dry-run`
 - 不提交 profile、cookie、截图、诊断文件到仓库
+
+## 发布到 npm（维护者）
+
+发布元数据已经配好，只差一次 `npm publish`：
+
+```bash
+npm login                        # 首次需要，浏览器里授权
+npm test                         # 100 条测试
+npm publish --access public      # publishConfig 已指向 registry.npmjs.org
+```
+
+本机 `npm config get registry` 若是 `registry.npmmirror.com`（只读镜像），发布必须显式指定源：
+
+```bash
+npm publish --registry https://registry.npmjs.org --access public
+```
+
+`prepublishOnly` 会先跑 `npm test`，测试不过发不出去。发布之后：
+
+- `npx henu-cli@latest install` 就是官方安装方式，README 里所有 `github:` 写法都可以替换掉
+- 后续改版：改 `package.json` 版本（或 `npm version patch|minor`）→ 提交推送 → `npm publish`
 
 ## 许可
 

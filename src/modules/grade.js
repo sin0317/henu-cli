@@ -47,6 +47,91 @@ export async function getGradeAudit(options = {}) {
   };
 }
 
+// 平均学分绩点：优先用教务系统自己算好的数（获得学分绩点 ÷ 获得学分），
+// 同时按明细重算一遍做对照，两套数不一致时以系统为准并给出偏差。
+export function summarizeGpa(records, summary) {
+  const total = summary?.total ?? null;
+  const graded = records.filter((record) => Number.isFinite(record.gpa) && (record.earnedCredit ?? 0) > 0);
+  const missing = records
+    .filter((record) => !Number.isFinite(record.gpa) && (record.earnedCredit ?? 0) > 0)
+    .map((record) => `${record.name}(${record.score})`);
+
+  const creditSum = graded.reduce((sum, record) => sum + record.earnedCredit, 0);
+  const pointSum = graded.reduce((sum, record) => sum + record.gpa * record.earnedCredit, 0);
+  // 已获学分要把等级制课程也算进去（它们没有绩点但有学分）
+  const earnedAll = records.reduce((sum, record) => sum + (record.earnedCredit ?? 0), 0);
+  const numeric = graded.filter((record) => Number.isFinite(Number(record.score)));
+  const scoreCreditSum = numeric.reduce((sum, record) => sum + record.earnedCredit, 0);
+  const scoreSum = numeric.reduce((sum, record) => sum + Number(record.score) * record.earnedCredit, 0);
+
+  const systemCreditGpa = total?.creditGpa ?? null;
+  const systemCredits = total?.earnedCredits ?? null;
+  const systemAverageGpa = Number.isFinite(systemCreditGpa) && systemCredits
+    ? round(systemCreditGpa / systemCredits)
+    : null;
+
+  return {
+    earnedCredits: systemCredits ?? round(earnedAll),
+    averageGpa: systemAverageGpa ?? (creditSum ? round(pointSum / creditSum) : null),
+    weightedAverage: total?.average ?? (scoreCreditSum ? round(scoreSum / scoreCreditSum) : null),
+    averageScore: total?.averageScore ?? null,
+    creditGpaPoints: systemCreditGpa,
+    gpaPoints: total?.gpa ?? null,
+    source: systemAverageGpa !== null ? 'system' : 'computed',
+    computed: {
+      averageGpa: creditSum ? round(pointSum / creditSum) : null,
+      weightedAverage: scoreCreditSum ? round(scoreSum / scoreCreditSum) : null,
+      gradedCourses: graded.length,
+      credits: round(creditSum)
+    },
+    missingGpa: missing
+  };
+}
+
+export async function getGradeGpa(options = {}) {
+  const loaded = await loadGrades(options);
+  const { records, summary } = loaded.parsed;
+  return {
+    scope: loaded.scope,
+    ...summarizeGpa(records, summary),
+    byCategory: summary.lines.filter((line) => line.name !== '合计'),
+    sourceUrl: loaded.sourceUrl
+  };
+}
+
+export function formatGpaText(result) {
+  const lines = ['学分绩点（数据来自教务系统成绩明细）'];
+  lines.push(`  平均学分绩点：${fmt(result.averageGpa)}${result.source === 'system' ? '' : '（按明细重算）'}`);
+  lines.push(`  加权平均成绩：${fmt(result.weightedAverage)}`);
+  if (result.averageScore !== null && result.averageScore !== undefined) {
+    lines.push(`  算术平均成绩：${fmt(result.averageScore)}`);
+  }
+  lines.push(`  已获学分：${fmt(result.earnedCredits)}`);
+  if (result.creditGpaPoints !== null && result.creditGpaPoints !== undefined) {
+    lines.push(`  获得学分绩点：${fmt(result.creditGpaPoints)}`);
+  }
+
+  if (result.computed?.averageGpa !== null && result.averageGpa !== null
+    && Math.abs(result.computed.averageGpa - result.averageGpa) >= 0.01) {
+    lines.push(`  明细重算：${fmt(result.computed.averageGpa)}（与系统值不一致，以系统为准）`);
+  }
+
+  if (result.byCategory?.length) {
+    lines.push('');
+    lines.push('按平台：');
+    for (const bucket of result.byCategory) {
+      lines.push(`  ${bucket.name}：${bucket.count ?? '?'} 门 / ${fmt(bucket.earnedCredits)} 学分 / 绩点 ${fmt(bucket.creditGpa)}`);
+    }
+  }
+
+  if (result.missingGpa?.length) {
+    lines.push('');
+    lines.push(`等级制成绩（不计入绩点）：${result.missingGpa.join('、')}`);
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 // 把成绩记录按培养方案的平台逐项归集，算出每个平台的完成情况。
 // 一门课只归一个平台（按顺序首个命中），避免重复计学分。
 export function auditCredits(records, curriculum = CURRICULUM) {
@@ -288,6 +373,11 @@ function dumpDiagnostics({ pageState, nav, scope, tables, html }) {
     htmlHead: html.slice(0, 4000)
   }, null, 2)}\n`, 'utf8');
   process.stderr.write(`diagnostics written to ${file}\n`);
+}
+
+function fmt(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  return Number.isFinite(Number(value)) ? String(round(Number(value))) : String(value);
 }
 
 export { formatGradeText, splitCategory };

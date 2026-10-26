@@ -1,8 +1,7 @@
 {
   "name": "henu-cli",
   "version": "0.3.0",
-  "private": true,
-  "description": "Agent-friendly CLI for Henan University web services.",
+  "description": "面向 AI Agent 的河南大学校园服务 CLI：课表与下一节课、空教室、成绩与学分绩点、培养方案、公文通、图书馆",
   "type": "module",
   "bin": {
     "henu-cli": "src/cli.js"
@@ -15,18 +14,35 @@
   ],
   "scripts": {
     "test": "node --test",
-    "henu-cli": "node src/cli.js"
+    "henu-cli": "node src/cli.js",
+    "prepublishOnly": "npm test",
+    "release": "npm publish --access public"
   },
   "keywords": [
     "henu",
+    "河南大学",
     "cli",
     "agent",
     "campus",
+    "timetable",
     "playwright"
   ],
+  "author": "sin0317",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sin0317/henu-cli.git"
+  },
+  "homepage": "https://github.com/sin0317/henu-cli#readme",
+  "bugs": {
+    "url": "https://github.com/sin0317/henu-cli/issues"
+  },
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
     "playwright": "^1.61.0"
