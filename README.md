@@ -1,6 +1,7 @@
 # henu-cli
 
 [![test](https://github.com/sin0317/henu-cli/actions/workflows/test.yml/badge.svg)](https://github.com/sin0317/henu-cli/actions/workflows/test.yml)
+[![npm](https://img.shields.io/npm/v/henu-cli.svg)](https://www.npmjs.com/package/henu-cli)
 
 面向 AI Agent 的河南大学校园服务命令行工具。设计参考 [szu-cli](https://github.com/AwesomeHou/szu-cli)（MIT）。
 
@@ -22,24 +23,28 @@ node src/cli.js course today
 一条命令装好 CLI + skill：
 
 ```bash
-npx -y github:sin0317/henu-cli install
+npx henu-cli@latest install
 ```
 
-> 包已配置好 npm 发布元数据（`publishConfig` 指向 registry.npmjs.org，`prepublishOnly` 会先跑测试），
-> 但还没执行过 `npm publish`，所以现阶段的 `npx henu-cli@latest install` 会 404，请用上面的 `github:` 写法。
+已发布到 npm：[`henu-cli`](https://www.npmjs.com/package/henu-cli)（`latest` = 0.3.0）。不想走 npx 也可以直接装：
 
-它会做三件事：把 CLI 装进 npm 全局前缀、自动挑一个**已经在 PATH 上**的前缀（Windows 下默认目录不可见时改投 `%APPDATA%\npm`）、把随包 skill 拷到 `~/.workbuddy/skills/`。
+```bash
+npm i -g henu-cli
+henu-cli skill install     # 顺手把随包 skill 装上
+```
+
+`install` 会做三件事：把 CLI 装进 npm 全局前缀、自动挑一个**已经在 PATH 上**的前缀（Windows 下默认目录不可见时改投 `%APPDATA%\npm`）、把随包 skill 拷到 `~/.workbuddy/skills/`。
 
 常用变体：
 
 ```bash
-npx -y github:sin0317/henu-cli install --text         # 人类可读输出
-npx -y github:sin0317/henu-cli install --no-skill     # 只装 CLI
-npx -y github:sin0317/henu-cli install --target all   # skill 装到所有支持的 Agent 目录
-npx -y github:sin0317/henu-cli install --prefix "C:\Users\me\AppData\Roaming\npm"
+npx henu-cli@latest install --text         # 人类可读输出
+npx henu-cli@latest install --no-skill     # 只装 CLI
+npx henu-cli@latest install --target all   # skill 装到所有支持的 Agent 目录
+npx henu-cli@latest install --prefix "C:\Users\me\AppData\Roaming\npm"
 ```
 
-> `npx henu-cli@latest install` 要等包发布到 npm 才有，目前用上面的 GitHub 直连写法。
+> 从源码走也行：`npx -y github:sin0317/henu-cli install`，两条路径功能完全一致。
 
 **为什么先 `npm pack` 再装**：`npm install -g <目录>` 在 npm 7+ 会建符号链接，从 npx 临时缓存装的话，缓存一清全局命令就失效。所以 `install` 先打 tarball 再装 `.tgz`，落盘的是真副本。
 
@@ -600,24 +605,30 @@ henu-cli grade audit --headed --dump
 
 ## 发布到 npm（维护者）
 
-发布元数据已经配好，只差一次 `npm publish`：
+当前线上：`henu-cli@0.3.0`，`latest` 指向它。
 
 ```bash
-npm login                        # 首次需要，浏览器里授权
-npm test                         # 100 条测试
-npm publish --access public      # publishConfig 已指向 registry.npmjs.org
+npm login --registry https://registry.npmjs.org     # 首次，浏览器授权
+npm run release                                     # = npm test + npm publish
 ```
 
-本机 `npm config get registry` 若是 `registry.npmmirror.com`（只读镜像），发布必须显式指定源：
+几个已经踩过的坑，记下来省得再走一遍：
 
-```bash
-npm publish --registry https://registry.npmjs.org --access public
-```
+1. **淘宝镜像不能发布。** `registry.npmmirror.com` 是只读镜像，`npm login` 会跳到它的登录页并提示
+   `Public registration is not allowed`。登录和发布都要显式带 `--registry https://registry.npmjs.org`，
+   但**不要**改全局 `registry`，否则国内装包会变慢。
+2. **账号开了 2FA 时，非交互式发布会 403。** 报错是
+   `Two-factor authentication ... is required to publish packages`。在真终端里跑，npm 会提示
+   `Enter OTP:`；用 CI 则要配 Trusted Publishing（OIDC）。
+3. **Granular Token 默认是「暂存发布」。** 权限选成 staged 的话，首发布会报
+   `E_STAGE_REQUIRED`（只能推到暂存区），或者成功一半留下一个 `0.0.0-stage` 占位版本 +
+   `0.3.0` 暂存待审（`npm publish` 再跑会 `E409 Cannot publish over previously staged version`）。
+   建令牌时要在 **Publishing access** 里选 **Direct publish**。npm 11+ 才能用
+   `npm stage list|approve|reject` 处理暂存版本，npm 10 没有这个子命令。
+4. 发布后 registry 有几十秒到几分钟的传播延迟，`GET /henu-cli/0.3.0` 短暂 404 属正常，
+   以 `npm view henu-cli versions dist-tags` 为准。
 
-`prepublishOnly` 会先跑 `npm test`，测试不过发不出去。发布之后：
-
-- `npx henu-cli@latest install` 就是官方安装方式，README 里所有 `github:` 写法都可以替换掉
-- 后续改版：改 `package.json` 版本（或 `npm version patch|minor`）→ 提交推送 → `npm publish`
+后续改版：`npm version patch|minor` → 提交推送 → `npm run release`。
 
 ## 许可
 

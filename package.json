@@ -16,7 +16,7 @@
     "test": "node --test",
     "henu-cli": "node src/cli.js",
     "prepublishOnly": "npm test",
-    "release": "npm publish --access public"
+    "release": "npm publish --registry https://registry.npmjs.org --access public"
   },
   "keywords": [
     "henu",

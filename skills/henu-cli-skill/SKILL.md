@@ -37,7 +37,7 @@ henu-cli --version           # 输出 0.3.x 表示已安装
 这时**把安装命令交给用户自己在终端执行**，不要代为运行：
 
 ```bash
-npx -y github:sin0317/henu-cli install
+npx henu-cli@latest install
 ```
 
 （它会全局装 CLI 并把本 skill 拷到 `~/.workbuddy/skills/`；装完要新开一个会话，
