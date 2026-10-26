@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+*.doc binary
+*.png binary
+*.jpg binary
+*.ics text eol=crlf

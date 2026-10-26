@@ -1,0 +1,8 @@
+node_modules/
+.henu-cli/
+browser-profiles/
+diagnostics-*.json
+*.tgz
+*.ics
+.env
+.DS_Store

@@ -1,0 +1,34 @@
+{
+  "name": "henu-cli",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Agent-friendly CLI for Henan University web services.",
+  "type": "module",
+  "bin": {
+    "henu-cli": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "henu-cli": "node src/cli.js"
+  },
+  "keywords": [
+    "henu",
+    "cli",
+    "agent",
+    "campus",
+    "playwright"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "^1.61.0"
+  }
+}
