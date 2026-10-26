@@ -101,24 +101,43 @@ henu-cli course ics --start 2026-09-07 --out ~/Desktop/课表.ics --text
 
 ## 空教室查询
 
+两种问法，**"某间教室某节课空不空"用 `room grid`**，`room free` 只适合粗筛。
+
 ```bash
-henu-cli room options                              # 先看合法取值，别猜
-henu-cli room free --campus 金明 --period 1
-henu-cli room free --weekday 3 --period 1-4 --text # --text 输出人读清单
-henu-cli room free --building 计算机大楼 --period 5
+henu-cli room options                                  # 先看合法取值，别猜
+henu-cli room grid --building 金明综合楼5 --week 9 --weekday 3 --text
+henu-cli room grid --building 金明综合楼5 --week 9 --weekday 3 --period 3-4 --text
+henu-cli room free --campus 金明 --week 9 --period 3-4 --text
+henu-cli room free --building 计算机大楼 --week 9 --period 5
 ```
 
-参数要点：
+### room grid（推荐）
 
-- `--period` 是**小节号** `1`-`8`（河大一天 8 小节），不是"第几大节"
-- `--weekday` 缺省为今天，也可 `周一` 或 `1-5`
-- `--campus` 取 `明伦` / `金明` / `郑州` / `其他`
-- `--type` 取 `一般教室` / `多媒体` / `师范` / `不安排教室`，缺省全部
-- 缺省的 `--max 100` 会滤掉大教室；问大教室时显式给 `--max 300`
+按小节给出「教室 × 节次」占用矩阵，`--period` 给定时直接列出该时段全空的教室。
+
+- `--building` **必填**，`--week` 也**必填**（服务端按周取数，不给周次会返回 1-18 周的全部格子）
+- `--weekday` 缺省今天，只支持单个星期；`--period` 支持 `3` / `3-4`
+- `--campus` 缺省 `金明`；楼在别的校区时必须显式给，否则查不到教室
+- 输出 `rooms[].grid` 是 13 位网格，`.` = 空闲、`X` = 占用（有课 / 预约 / 留用）
+- 固定带 `rad_jc=1`（按小节）+ `lyjc=1`（留用算非空闲），所以留用教室不会被报成空
+
+**回答"哪间教室空"之前先想清楚周期**：`--week` 猜错会拿到另一周的数据。当前是第几周
+教务系统不直接给，需要用户确认（或从 `course ics` 的 `--week-now` 记录里取）。
+
+### room free
+
+- `--period` 是小节号 `1`-`13`（河大一天 13 小节；服务端接受 1-15，但 14/15 无真实排课）
+- `--week` 缺省 `1-18`，含义是**每一周都空**的交集，不是本周；查具体某周务必显式给
+- 默认排除「设置为留用」的教室（`5301/5302` 这类自习/专用教室），`--include-reserved` 可放开
+- `--weekday` 缺省今天，也可 `周一` 或 `1-5`；`--campus` 取 `明伦` / `金明` / `郑州` / `其他`
+- `--type` 取 `一般教室` / `多媒体` / `师范` / `不安排教室`；缺省 `--max 100` 会滤掉大教室
 
 输出结构：`byPeriod[]` 是每个节次的教室数，`groups[]` 每项带 `period`、`campus`、`roomType`、`rooms[]`。
 `total` 是「教室 × 节次」累计，同一间教室在多个节次都空会重复计数——回答"有多少间"时说清这一点，
 或按 `rooms[].name` 去重后再给数字。
+
+**别把"教务系统说空"直接当成"能进去自习"**：留用教室、临时借用、手机端标「冲突」的教室都可能进不去，
+拿不准就用 `room grid` 看格子，或者干脆告诉用户"以现场门牌/门口通知为准"。
 
 ## 成绩与毕业学分
 
@@ -249,7 +268,7 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 ## 当前实现状态
 
 已实现：`doctor`、`auth login|status|logout`、`browser status|use|install`、
-`course list|today|ics|status`、`room free|options`、`grade list|audit|plan`、
+`course list|today|ics|status`、`room grid|free|options`、`grade list|audit|plan`、
 `plan depts|majors|show|audit`、`second standard|check`、`exam tabs`、
 `notice list|search|show`、`library search|account|seat`、`skill path|install`。
 
@@ -274,7 +293,7 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 | 页面形态 | 用什么 | 例 |
 |---|---|---|
 | 左侧菜单树（分组 → 子项） | `openJwMenuApp` | 课表：教学安排 → 个人课表 |
-| 首页 tile → 卡片菜单 | `openJwPublicQuery` | 空教室：`#SB` → `#module270` |
+| 首页 tile → 卡片菜单 | `openJwPublicQuery` | 空教室：`#SB` → `#module270`（按节反查）/ `#SB` → `#module280`（按教室看格子） |
 | 首页 tile → tab 页 | `openJwTabApp` | 成绩：`#S403` → `S40303`；培养方案：`#S403` → `S40301` |
 | 只想看某个 tile 下有哪些入口 | `listJwTileTabs` | 考试：`#S204` |
 

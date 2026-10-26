@@ -98,12 +98,58 @@ skill 会拷到 `~/.workbuddy/skills/henu-cli-skill/`。**技能列表在会话�
 
 ## 空教室查询
 
+分两种问法，**问“某间教室某节课空不空”请用 `room grid`**。
+
+### room grid：按小节看整栋楼（推荐）
+
+```bash
+# 第 9 周周三，金明综合楼5 每间教室的空闲节次
+node src/cli.js room grid --building 金明综合楼5 --week 9 --weekday 3 --text
+
+# 只要第 3-4 节全空的教室
+node src/cli.js room grid --building 金明综合楼5 --week 9 --weekday 3 --period 3-4 --text
+```
+
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `--building` | 楼房名，如 `金明综合楼5` | **必填** |
+| `--week` | 单个教学周，如 `9` | **必填**（不给会返回 1-18 周的全部格子，没法用） |
+| `--weekday` | `3` 或 `周三` | 今天 |
+| `--period` | `3`、`3-4`（一天 13 小节） | 不指定则只输出网格 |
+| `--campus` | 明伦 / 金明 / 郑州 / 其他 | 金明 |
+| `--text` | 人读清单 | 关闭 |
+
+这一页对应教务首页 `#SB → #module280`（分教室查看空闲周次/节次），结果天然是
+「教室 × 节次 × 星期」的占用矩阵，红色 = 非空闲。请求里固定带两个字段：
+
+- `rad_jc=1` —— 按小节。默认是 `rad_jc=0`（按大节），粒度对不上真实课表。
+- `lyjc=1` —— 留用节次算非空闲。默认把留用教室当空闲，`5301/5302` 就是这么被误报的。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "query": { "campus": "金明校区", "building": "金明综合楼5", "week": "9", "weekday": "星期三", "periodCount": 13 },
+    "roomsTotal": 34,
+    "freeCount": 2,
+    "free": [{ "name": "金明综合楼5201", "capacity": 96, "roomType": "多媒体教室" }],
+    "rooms": [
+      { "name": "金明综合楼5201", "grid": "......XXXX...", "freePeriods": [1,2,3,4,5,6,11,12,13], "busyPeriods": [7,8,9,10] }
+    ]
+  }
+}
+```
+
+`grid` 是 13 位网格，`.` = 空闲、`X` = 占用（有课 / 预约 / 留用）。
+
+### room free：按节次反查哪些教室空
+
 ```bash
 # 今天、金明校区、第 1 节、多媒体教室，只看 100 人以上
 node src/cli.js room free --campus 金明 --period 1 --type 多媒体 --min 100
 
-# 周三 1-4 节的空闲教室，用人类可读格式
-node src/cli.js room free --weekday 3 --period 1-4 --text
+# 周三 3-4 节的空闲教室，用人类可读格式
+node src/cli.js room free --weekday 3 --period 3-4 --week 9 --text
 
 # 只看计算机大楼
 node src/cli.js room free --building 计算机大楼 --weekday 3 --period 1
@@ -116,12 +162,13 @@ node src/cli.js room options
 |---|---|---|
 | `--campus` | 明伦 / 金明 / 郑州 / 其他 | 全部校区 |
 | `--weekday` | `3` 或 `周一` 或 `1-5` | 今天 |
-| `--period` | 小节号 `1`、`1-4`（一天 8 小节） | 全部 8 节 |
-| `--week` | `5` 或 `1-18` | `1-18` |
+| `--period` | 小节号 `1`、`3-4`（一天 13 小节） | 全部 13 节 |
+| `--week` | `9` 或 `1-18` | `1-18`，含义是**每一周都空**，查具体某周务必显式给 |
 | `--parity` | 单周 / 双周 | 不限 |
 | `--type` | 一般教室 / 多媒体 / 师范 / 不安排教室 | 全部类型 |
 | `--building` | 楼房名，如 `金明综合楼5` | 全部 |
 | `--min` / `--max` | 容量范围 | 1 / 100 |
+| `--include-reserved` | 连“设置为留用”的教室也算进来 | 关闭（默认排除） |
 | `--text` | 输出人读清单而不是 JSON | 关闭 |
 
 输出按「节次 → 校区 → 教室类型」分组，`byPeriod` 给出每个节次的教室数，
@@ -428,17 +475,26 @@ henu-cli library seat --day 2026-10-27 --campus 金明 --text
 1-9周 三[1-2] 金明综合楼5206(138)；1-9周 四[1-2] 计算机大楼101(150)
 ```
 
-### 空教室查询的四个坑
+### 空教室查询的六个坑
 
 1. **入口是首页卡片，不是左侧菜单。** 要依次点 `#SB`（公共查询）→ `#module270`（分周次/节次查看空闲教室）。
    这层菜单用绝对定位布局且默认 `visibility:hidden`，必须 `force: true` 点击，否则 Playwright 永远等不到可见。
 2. **结果页是独立帧且是 GBK。** 提交目标是 `kbbp/dykb.fzcjcckkxjsi_data.jsp`，返回 HTML 声明 `charset=GBK`。
    用 `fetch().text()` 会按 UTF-8 解出乱码，必须 `arrayBuffer()` + `TextDecoder('gbk')`。
-3. **只有 `hidDJ` 决定节次。** 页面代码里看着像节次字段的有三个：`selDJ`、`txtlsjc`、`txtXJXL`，
-   实测**改了都不影响结果**；真正生效的是隐藏字段 `hidDJ`（小节号 1-8）。返回标题里的 `[N节]` 可用来确认。
-   这也是最初"改成 1-12 节结果完全不变"的原因。
+3. **只有 `hidDJ` 决定节次，而且它是小节号不是大节。** 页面代码里看着像节次字段的有三个：
+   `selDJ`、`txtlsjc`、`txtXJXL`，实测**改了都不影响结果**；真正生效的是隐藏字段 `hidDJ`。
+   代码注释里曾按「第几大节 1-4」理解，但实测传 `9`/`12`/`13` 都能返回对应的 `[9节]/[12节]/[13节]`，
+   所以它是小节号（河大作息 13 节）。服务端接受 1-15，但 14/15 没有真实排课，对外按 1-13 收口。
 4. **教室类型选项和直觉不符。** 表单虽列出「一般教室」，但河大实际排课几乎全归到「多媒体教室」和
    「师范生实训中心教室」，选「一般教室」会返回「没有检索到记录」，这是正常的，不是解析错误。
+5. **留用教室会被算成“空闲教室”。** `5301/5302` 这类设置为留用（自习/专用）的教室，
+   在 `module270` 的空闲教室表里是“空”的，实际进不去；手机端把它们标成「冲突」（蓝格）。
+   默认请求带 `chkBHSZWLYDJS=on`（不含设置为留用的教室），`room grid` 则用 `lyjc=1`
+   把留用节次直接标成占用。要复现旧行为加 `--include-reserved`。
+6. **`--week` 缺省是“每一周都空”的交集，不是本周。** `txtZC=1-18` 在服务端是逐周求交，
+   所以默认结果会明显少于某一周的真实空教室（例如第 9 周周三第 3 节，默认只给 5101/5201 两间，
+   实际当周还有 5306 等）。查具体某天一定要显式 `--week`。
+
 
 ### 成绩查询的三个坑
 
@@ -504,7 +560,7 @@ henu-cli course list --headed --dump
 
 会写出 `~/.henu-cli/diagnostics-course.json`，里面有最终 URL、帧列表、表头和样例行。按它调整 `course-parser.js` 的 `HEADER_HINTS` 或 `TIME_PLACE_PATTERN`，通常不用动业务逻辑。
 
-空教室同理：
+空教室同理（`room free` 走 `jw.room`，`room grid` 走 `jw.room.grid`，两个页面各自一套）：
 
 ```bash
 henu-cli room free --period 1 --headed --dump
@@ -521,7 +577,7 @@ henu-cli grade audit --headed --dump
 写出 `~/.henu-cli/diagnostics-grade.json`，包含查询口径、每张表的表头与样例行、以及结果页 HTML 前 4000 字符。
 
 菜单名变了改 `config.js` 的 `jw.menu`；接口路径变了改 `jw.timetableMarker`；
-空教室的应用码或接口路径变了改 `jw.room`（`menuCode` / `moduleId` / `dataPath`）；
+空教室的应用码或接口路径变了改 `jw.room`（按节反查）或 `jw.room.grid`（按教室看格子）下的 `menuCode` / `moduleId` / `dataPath`；
 成绩的 tab 码或查询口径变了改 `jw.grade`（`tile` / `menuCode` / `controls`）。
 培养方案改版改 `src/curriculum.js`。
 

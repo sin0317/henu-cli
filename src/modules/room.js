@@ -6,7 +6,18 @@ import { assertBrowserAvailable } from './browser.js';
 import { getLaunchOptions, importPlaywright } from './browser-options.js';
 import { getTodayWeekday } from './course.js';
 import { openJwPage, openJwPublicQuery } from './jw.js';
-import { buildRoomQuery, parseFreeRooms, periodLabel } from './room-parser.js';
+import {
+  buildRoomQuery,
+  parseFreeRooms,
+  parseRoomGrid,
+  periodLabel,
+  resolveBuilding,
+  resolveCampus,
+  resolvePeriods,
+  resolveWeekRange,
+  resolveWeekdayRange,
+  roomGridForWeekday
+} from './room-parser.js';
 import { getHenuHome, getProfilePath } from './paths.js';
 
 export async function getFreeRooms(options = {}) {
@@ -177,6 +188,200 @@ export async function getFreeRooms(options = {}) {
       groups: merged,
       ...(total === 0 ? { note: '该条件下没有空闲教室，可放宽节次、周次或容量范围再试。' } : {}),
       sourceUrl: formFrame.url()
+    };
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+// ── 分教室查看空闲周次/节次 ────────────────────────────────────────────
+// 走 module280，固定 rad_jc=1（按小节）+ lyjc=1（留用节次算非空闲）。
+// 和 room free 的区别：这里能拿到「某间教室 × 某小节 × 某星期」的真实状态，
+// 留用教室、预约占用都会如实标成非空闲，不会再把 5301/5302 那种进不去的
+// 教室推荐成“空教室”。
+export async function getRoomGrid(options = {}) {
+  if (!options.building) {
+    const error = new Error('room grid 必须用 --building 指定楼房。');
+    error.code = 'INVALID_ARGUMENT';
+    error.hint = '运行 henu-cli room options 查看可用楼房，例如 --building 金明综合楼5。';
+    throw error;
+  }
+
+  const buildingCode = resolveBuilding(options.building);
+  if (buildingCode === null) {
+    const error = new Error(`未知楼房：${options.building}`);
+    error.code = 'INVALID_ARGUMENT';
+    error.hint = '运行 henu-cli room options 查看可用楼房。';
+    throw error;
+  }
+
+  const campusCode = resolveCampus(options.campus ?? '金明');
+  if (campusCode === null) {
+    const error = new Error(`未知校区：${options.campus}`);
+    error.code = 'INVALID_ARGUMENT';
+    error.hint = '校区取值：明伦 / 金明 / 郑州 / 其他。';
+    throw error;
+  }
+
+  if (!options.week) {
+    const error = new Error('room grid 必须用 --week 指定教学周（例如 --week 9）。');
+    error.code = 'INVALID_ARGUMENT';
+    error.hint = '这一页是按周取数的，不给周次服务端会返回 1-18 周的全部格子，结果没法用。';
+    throw error;
+  }
+  const week = resolveWeekRange(options.week);
+  if (!week || week.includes('-')) {
+    const error = new Error(`周次参数不合法：${options.week}（只支持单个周次，例如 9）`);
+    error.code = 'INVALID_ARGUMENT';
+    throw error;
+  }
+
+  const weekdayInput = options.weekday ?? String(getTodayWeekday());
+  const weekdayRange = resolveWeekdayRange(weekdayInput);
+  if (!weekdayRange || weekdayRange.from !== weekdayRange.to) {
+    const error = new Error(`星期参数不合法：${weekdayInput}（只支持单个星期，例如 3 或 周三）`);
+    error.code = 'INVALID_ARGUMENT';
+    throw error;
+  }
+  const weekday = weekdayRange.from;
+
+  const periodInput = resolvePeriods(options.period);
+  if (!periodInput) {
+    const error = new Error(`节次参数不合法：${options.period}（一天 13 小节，示例：3-4）`);
+    error.code = 'INVALID_ARGUMENT';
+    throw error;
+  }
+  // 没给 --period 时只输出网格，不挑“哪些节次全空”
+  const wantedPeriods = options.period ? periodInput.periods : null;
+
+  const browser = assertBrowserAvailable();
+  const { chromium } = await importPlaywright();
+
+  const context = await chromium.launchPersistentContext(getProfilePath(browser.id), {
+    ...getLaunchOptions({ headless: options.headless ?? true }),
+    viewport: { width: 1600, height: 1000 }
+  });
+
+  try {
+    const page = context.pages()[0] ?? await context.newPage();
+
+    const opened = await openJwPage(page, HENU.jw.base, options);
+    if (!opened.authState.loggedIn) {
+      throwAuthRequired(opened.authState, opened.pageState, opened.sso);
+    }
+
+    const nav = await openJwPublicQuery(page, {
+      menuCode: HENU.jw.room.menuCode,
+      moduleId: HENU.jw.room.grid.moduleId,
+      formMarker: HENU.jw.room.grid.formMarker,
+      timeoutMs: options.waitMs ?? 25000
+    });
+
+    const formFrame = page.frames().find((frame) => frame.url().includes(HENU.jw.room.grid.formMarker));
+    if (!nav.ok || !formFrame) {
+      throwUnrecognized(opened.pageState, {
+        reason: nav.reason,
+        frames: page.frames().map((frame) => frame.url())
+      });
+    }
+
+    // 这一页的表单是异步渲染的，不等 form 出现直接取会拿到 null
+    await formFrame.waitForSelector('form', { timeout: 15000 }).catch(() => {});
+
+    const fetched = await formFrame.evaluate(async (payload) => {
+      const form = document.querySelector('form');
+      if (!form) return { error: 'form-missing' };
+
+      const data = new FormData(form);
+      data.delete('btnSave');
+      for (const [key, value] of Object.entries(payload.overrides)) {
+        if (value === '') {
+          data.delete(key);
+        } else {
+          data.set(key, value);
+        }
+      }
+
+      const body = [...data.entries()]
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
+
+      const response = await fetch(payload.dataPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body
+      });
+      const buffer = await response.arrayBuffer();
+      let text;
+      try {
+        text = new TextDecoder('gbk').decode(buffer);
+      } catch {
+        text = new TextDecoder('utf-8').decode(buffer);
+      }
+      return { status: response.status, text };
+    }, {
+      dataPath: HENU.jw.room.grid.dataPath,
+      overrides: {
+        selXQ: campusCode,
+        selLF: buildingCode,
+        selJSI: '',
+        selJSLX: '',
+        txtZC: week,
+        rad_jc: '1',
+        lyjc: '1',
+        menucode_current: HENU.jw.room.grid.menuCodeCurrent
+      }
+    });
+
+    if (fetched?.error || typeof fetched?.text !== 'string') {
+      throwUnrecognized(opened.pageState, { reason: fetched?.error ?? 'empty-response' });
+    }
+    if (!/空闲节次/.test(fetched.text)) {
+      throwUnrecognized(opened.pageState, {
+        reason: 'no-grid-page',
+        head: fetched.text.slice(0, 400)
+      });
+    }
+
+    const parsed = parseRoomGrid(fetched.text);
+    const periodCount = parsed.periodCount || 13;
+    const rooms = parsed.rooms.map((room) => {
+      const grid = roomGridForWeekday(room, weekday, periodCount);
+      return {
+        name: room.name,
+        roomType: room.roomType,
+        capacity: room.capacity,
+        grid: grid.slots,
+        freePeriods: grid.freePeriods,
+        busyPeriods: grid.busyPeriods
+      };
+    });
+
+    const free = wantedPeriods
+      ? rooms
+        .filter((room) => wantedPeriods.every((period) => room.freePeriods.includes(period)))
+        .map((room) => ({ name: room.name, capacity: room.capacity, roomType: room.roomType }))
+      : null;
+
+    return {
+      query: {
+        campus: parsed.campus,
+        building: parsed.building ?? options.building,
+        week,
+        weekday: `星期${WEEKDAY_CHARS[weekday - 1]}`,
+        mode: '按小节',
+        periodCount,
+        reservedRule: '留用 / 预约都算占用（lyjc=1）',
+        ...(wantedPeriods ? { periods: wantedPeriods.map(periodLabel) } : {})
+      },
+      weeks: parsed.weeks,
+      roomsTotal: rooms.length,
+      ...(free ? { freeCount: free.length, free } : {}),
+      rooms,
+      ...(rooms.length === 0
+        ? { note: '这栋楼在该周次没有返回任何教室，先确认 --campus 是否与楼房所在校区一致。' }
+        : {}),
+      sourceUrl: HENU.jw.room.grid.dataPath
     };
   } finally {
     await context.close().catch(() => {});

@@ -34,7 +34,19 @@ export const HENU = {
       moduleId: 'module270',
       formMarker: 'dykb.fzcjcckkxjsi.html',
       dataPath: 'dykb.fzcjcckkxjsi_data.jsp',
-      menuCodeCurrent: 'SB11'
+      menuCodeCurrent: 'SB11',
+
+      // 公共查询 → 分教室查看空闲周次/节次（module280）。
+      // 这是唯一能按「小节」拿到某间教室某小节到底空不空的页面：
+      // 结果是一张 教室 × 节次 × 星期 的占用矩阵，红底=非空闲。
+      // 注意表单必须显式带 rad_jc=1（按小节）和 lyjc=1（留用计为非空闲），
+      // 否则默认按大节、且把留用教室算成空闲，5301/5302 就是这么被误报的。
+      grid: {
+        moduleId: 'module280',
+        formMarker: 'dykb.fjsickkxzcjc.html',
+        dataPath: 'dykb.fjsickkxzcjc_data.jsp',
+        menuCodeCurrent: 'SB12'
+      }
     },
 
     // 学业成绩 → 学业成绩（tab 页，不是左侧菜单树）

@@ -107,19 +107,23 @@ export function resolveWeekdayRange(input) {
   return { from, to };
 }
 
+// 河大作息一天 13 小节（上午 1-4、下午 5-8、晚上 9-13）。
+// 服务端 hidDJ 实际接受 1-15（教务库配了 15 行），但 14/15 没有真实排课，
+// 对外按 1-13 收口，避免把没有意义的时间段当成“空教室”推荐出去。
+export const MAX_PERIOD = 13;
+
 // 支持 "1-4" / "3" / "1~2"。
-// 河大一天 8 小节。服务端真正认的节次参数是 hidDJ（小节号 1-8），
-// 页面上的 txtXJXL / txtlsjc 只是展示字段，传了不影响结果——实测已验证。
+// 服务端真正认的节次参数是 hidDJ（小节号），页面上的 txtXJXL / txtlsjc 只是展示字段。
 // 返回的标题里会带 [N节] 标注，可作为节次的确认。
 export function resolvePeriods(input) {
   if (input === undefined || input === null || input === '') {
-    return { periods: [1, 2, 3, 4, 5, 6, 7, 8] };
+    return { periods: Array.from({ length: MAX_PERIOD }, (_, index) => index + 1) };
   }
   const match = String(input).trim().match(/^(\d{1,2})(?:\s*[-~到]\s*(\d{1,2}))?$/);
   if (!match) return null;
   const from = Number(match[1]);
   const to = match[2] ? Number(match[2]) : from;
-  if (from < 1 || to > 8 || from > to) return null;
+  if (from < 1 || to > MAX_PERIOD || from > to) return null;
 
   const periods = [];
   for (let section = from; section <= to; section += 1) {
@@ -140,7 +144,8 @@ export function resolveWeekRange(input) {
   const from = Number(match[1]);
   const to = match[2] ? Number(match[2]) : from;
   if (from < 1 || to > 30 || from > to) return null;
-  return `${from}-${to}`;
+  // 单周就给单值，区间才写成 1-18：服务端两种都认，但单值更能表达“只查这一周”
+  return from === to ? `${from}` : `${from}-${to}`;
 }
 
 export function resolveParity(input) {
@@ -209,6 +214,13 @@ export function buildRoomQuery(options = {}) {
     const max = resolveCapacity(options.max);
     if (max === null) return { error: `容量上限不合法：${options.max}` };
     overrides.hidMAX = String(max);
+  }
+
+  // 默认勾上「不含设置为留用的教室」。教务的「空闲教室」把留用教室也算成空闲，
+  // 但那类教室（自习室/专用教室）实际进不去，5301/5302 就是这种情况。
+  // 想看原始口径时用 --include-reserved 关掉。
+  if (options.excludeReserved !== false) {
+    overrides.chkBHSZWLYDJS = 'on';
   }
 
   const period = resolvePeriods(options.period);
@@ -289,6 +301,142 @@ export function parseFreeRooms(html) {
 
   const total = groups.reduce((sum, group) => sum + group.rooms.length, 0);
   return { title, weekLabel, weekdayLabel, periodTag, groups, total };
+}
+
+// ── 分教室查看空闲周次/节次（module280，按小节）────────────────────────
+// 这是唯一能回答“某间教室某个小节到底空不空”的页面。结果页结构（GBK）：
+//   校区：金明校区&ensp;&ensp;楼房：金明综合楼5
+//   <table>
+//     <tr><td rowspan=2>教室名称</td>…<td colspan=8>空闲节次</td></tr>
+//     <tr><td>节次</td><td>星期一</td>…<td>星期日</td></tr>
+//     <tr><td rowspan=15>金明综合楼5101</td><td rowspan=15>多媒体教室</td>
+//         <td rowspan=15>96</td><td rowspan=15>第9周</td>
+//         <td>1</td><td style="background-color:red">…</td>×7</tr>
+//     <tr><td>2</td>…同上 7 格…</tr>
+//   </table>
+// 红底 = 非空闲（有课 / 预约 / 留用），无色 = 空闲。
+// 传 lyjc=1（留用节次为非空闲节次）时，留用教室也会如实标红，
+// 不会被当成“空教室”推荐出去。
+const CELL_RE = /<td([^>]*)>([\s\S]*?)<\/td>/gi;
+
+export function parseRoomGrid(html) {
+  const source = String(html ?? '');
+
+  const header = source.match(/校\s*区\s*[：:]\s*([^<\s&]{1,20})[\s\S]{0,120}?楼\s*房\s*[：:]\s*([^<\s&]{1,20})/);
+  const campus = header?.[1] ?? null;
+  const building = header?.[2] ?? null;
+
+  const rooms = [];
+  let current = null;
+
+  for (const rowMatch of source.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [];
+    for (const cellMatch of rowMatch[1].matchAll(CELL_RE)) {
+      cells.push({ attrs: cellMatch[1], text: stripTags(cellMatch[2]) });
+    }
+    if (cells.length === 0) continue;
+
+    // 每个教室的第一行：教室 | 类型 | 容量 | 周次 | 节次1 | 星期×7
+    let offset = 0;
+    const head = cells[0];
+    if (/rowspan/i.test(head.attrs) && head.text && !/^\d+$/.test(head.text) && cells.length >= 11) {
+      const capacity = Number.parseInt(cells[2]?.text ?? '', 10);
+      current = {
+        name: head.text,
+        roomType: cells[1]?.text || null,
+        capacity: Number.isFinite(capacity) ? capacity : null,
+        week: cells[3]?.text || null,
+        busy: {}
+      };
+      rooms.push(current);
+      offset = 4;
+    }
+    if (!current) continue;
+
+    const period = Number.parseInt(cells[offset]?.text ?? '', 10);
+    if (!Number.isFinite(period) || period < 1) continue;
+
+    const days = cells
+      .slice(offset + 1, offset + 8)
+      .map((cell) => /background-color/i.test(cell.attrs));
+    if (days.length === 0) continue;
+    current.busy[period] = days;
+  }
+
+  const periodCount = rooms.reduce((max, room) => {
+    const periods = Object.keys(room.busy).map(Number);
+    return periods.length ? Math.max(max, ...periods) : max;
+  }, 0);
+
+  const weeks = [...new Set(rooms.map((room) => room.week).filter(Boolean))];
+  return { campus, building, weeks, periodCount, rooms };
+}
+
+// 把某个星期的占用行压成 ".  . X  X" 形式的紧凑网格 + 空闲节次清单。
+export function roomGridForWeekday(room, weekday, periodCount = MAX_PERIOD) {
+  const index = Number(weekday) - 1;
+  const slots = [];
+  const freePeriods = [];
+  const busyPeriods = [];
+  for (let period = 1; period <= periodCount; period += 1) {
+    const days = room.busy?.[period];
+    // 该节次没抓到数据时按占用处理：宁可少推荐，也不要推荐一间其实进不去的教室
+    const busy = days ? Boolean(days[index]) : true;
+    slots.push(busy ? 'X' : '.');
+    (busy ? busyPeriods : freePeriods).push(period);
+  }
+  return { slots: slots.join(''), freePeriods, busyPeriods };
+}
+
+function compactRanges(periods) {
+  if (!periods.length) return '无';
+  const ranges = [];
+  let start = periods[0];
+  let prev = periods[0];
+  for (const period of periods.slice(1)) {
+    if (period === prev + 1) {
+      prev = period;
+      continue;
+    }
+    ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = period;
+    prev = period;
+  }
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+  return ranges.join('、');
+}
+
+// 人读视图：直接吃 getRoomGrid 返回的数据，每间教室一行 + 指定节次的空闲清单。
+export function formatRoomGridText(data) {
+  const query = data.query ?? {};
+  const lines = [];
+
+  const context = [
+    query.campus,
+    query.building,
+    (data.weeks ?? []).join('/'),
+    query.weekday
+  ].filter(Boolean).join(' ');
+  lines.push(`${context}（${query.mode ?? '按小节'}，留用/预约都算占用）`);
+  lines.push('');
+
+  const rooms = data.rooms ?? [];
+  for (const room of rooms) {
+    const meta = [
+      room.capacity ? `${room.capacity}人` : null,
+      room.roomType
+    ].filter(Boolean).join(' / ');
+    lines.push(`  ${room.name}${meta ? `（${meta}）` : ''}  空闲：${compactRanges(room.freePeriods ?? [])}`);
+  }
+
+  lines.push('');
+  if (Array.isArray(data.free) && Array.isArray(query.periods)) {
+    const label = query.periods.map((period) => String(period).replace(/节$/, '')).join('、');
+    const hits = data.free.map((room) => `${room.name}${room.capacity ? `（${room.capacity}人）` : ''}`);
+    lines.push(`第 ${label} 节全空的教室 ${hits.length} 间：${hits.length ? hits.join('、') : '无'}`);
+  }
+  lines.push(`合计 ${rooms.length} 间教室`);
+  return lines.join('\n');
 }
 
 // 人读视图：把分组平铺成终端可读清单。

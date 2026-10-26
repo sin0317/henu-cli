@@ -32,8 +32,8 @@ import {
   listDepartments,
   listMajors
 } from './modules/plan.js';
-import { getFreeRooms } from './modules/room.js';
-import { summarizeRooms } from './modules/room-parser.js';
+import { getFreeRooms, getRoomGrid } from './modules/room.js';
+import { formatRoomGridText, MAX_PERIOD, summarizeRooms } from './modules/room-parser.js';
 import {
   SECOND_CLASSROOM,
   checkSecondClassroom,
@@ -70,12 +70,17 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
   course status                          登录态与课表可读性检查
 
 空教室
+  room grid --building 金明综合楼5 --week 9 [--weekday 3] [--period 3-4]
+            [--campus 金明] [--text]
+            按小节给出「教室 × 节次」占用矩阵（推荐用这个）；
+            留用教室、预约占用都算非空闲，--period 给定时直接列出全空的教室
   room free [--campus 明伦|金明|郑州|其他] [--weekday 3] [--period 1-4]
             [--week 1-18] [--parity 单周|双周] [--type 多媒体]
             [--building 金明综合楼] [--min 1] [--max 200]
-            [--headed] [--dump] [--text]
-            --period 是一天 8 小节内的编号，缺省为全部；
-            --weekday 缺省今天，--max 缺省 100 人
+            [--include-reserved] [--headed] [--dump] [--text]
+            --period 是一天 13 小节内的编号，缺省为全部；
+            --weekday 缺省今天，--max 缺省 100 人；
+            --week 缺省 1-18 表示「每一周都空」，查具体某周请显式给 --week
   room options                           列出校区/教室类型/楼房的可用取值
 
 成绩与毕业学分
@@ -283,8 +288,31 @@ function handleRoom(action, rest, argv) {
         '九章学堂南楼B座', '十号楼', '友兰学堂北楼B座', '友兰学堂南楼B座',
         '友兰学堂南楼C座', '曾宪梓楼', '综合教学楼'
       ],
-      defaults: { period: '不指定=全部大节', weekday: '今天', week: '1-18', min: 1, max: 100 }
+      defaults: {
+        period: `不指定=全部 1-${MAX_PERIOD} 小节`,
+        weekday: '今天',
+        week: '1-18（表示全学期每一周都空的交集，查具体某周请显式给 --week）',
+        min: 1,
+        max: 100,
+        reserved: '默认不含设置为留用的教室，--include-reserved 可放开'
+      }
     }));
+  }
+
+  if (action === 'grid') {
+    const options = {
+      headless: !hasFlag(argv, '--headed'),
+      campus: getOption(argv, '--campus'),
+      building: getOption(argv, '--building'),
+      weekday: getOption(argv, '--weekday'),
+      week: getOption(argv, '--week'),
+      period: getOption(argv, '--period')
+    };
+
+    if (hasFlag(argv, '--text')) {
+      return emitText('room.grid', () => getRoomGrid(options), formatRoomGridText);
+    }
+    return emit('room.grid', () => getRoomGrid(options));
   }
 
   if (action === 'free') {
@@ -299,7 +327,8 @@ function handleRoom(action, rest, argv) {
       roomType: getOption(argv, '--type'),
       building: getOption(argv, '--building'),
       min: getOption(argv, '--min'),
-      max: getOption(argv, '--max')
+      max: getOption(argv, '--max'),
+      excludeReserved: !hasFlag(argv, '--include-reserved')
     };
 
     if (hasFlag(argv, '--text')) {
@@ -308,7 +337,7 @@ function handleRoom(action, rest, argv) {
     return emit('room.free', () => getFreeRooms(options));
   }
 
-  return usageError('room 子命令：free | options');
+  return usageError('room 子命令：grid | free | options');
 }
 
 function handleGrade(action, rest, argv) {
