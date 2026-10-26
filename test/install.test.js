@@ -4,10 +4,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
   defaultUserPrefix,
+  findAllExistingPrefixes,
   findExistingPrefix,
   formatInstallText,
   globalBinPath,
   isPrefixOnPath,
+  orderByPath,
   normalizePathEntry,
   resolveNpmEntry,
   resolveSkillTargets
@@ -135,6 +137,47 @@ test('findExistingPrefix 不区分大小写、同一目录只查一次', () => {
 
   assert.equal(found, 'C:/NPM');
   assert.equal(calls.length, 1, '大小写不同但指向同一目录，只应检查一次');
+});
+
+test('findAllExistingPrefixes 会列出所有装过的前缀，而不是只挑第一个', () => {
+  const SEP = String.fromCharCode(92);
+  const same = (actual, expected) => actual.split(SEP).join('/').toLowerCase() === expected.toLowerCase();
+
+  const found = findAllExistingPrefixes(['C:/node/npm', 'C:/Users/me/AppData/Roaming/npm'], {
+    platform: 'win32',
+    // 两份都有 henu-cli.cmd
+    exists: (file) => /henu-cli\.cmd$/.test(file)
+  });
+  assert.equal(found.length, 2);
+});
+
+test('orderByPath：PATH 靠前的排前面，不在 PATH 里的排最后', () => {
+  const pathValue = ['/usr/bin', 'C:/node/npm', 'C:/Users/me/AppData/Roaming/npm'].join(';');
+  const ordered = orderByPath(['C:/Users/me/AppData/Roaming/npm', 'C:/node/npm', 'C:/orphan'], {
+    platform: 'win32',
+    pathValue
+  });
+  assert.deepEqual(ordered, ['C:/node/npm', 'C:/Users/me/AppData/Roaming/npm', 'C:/orphan']);
+});
+
+test('formatInstallText 多份并存时把所有位置都列出来', () => {
+  const text = formatInstallText({
+    version: '0.6.0',
+    prefix: 'C:/node/npm',
+    prefixes: ['C:/node/npm', 'C:/Users/me/AppData/Roaming/npm'],
+    onPath: true,
+    skill: { skipped: '--no-skill' },
+    warnings: ['装着 2 份']
+  });
+  assert.match(text, /C:\/node\/npm/);
+  assert.match(text, /AppData\\?\/Roaming\\?\/npm/i);
+  assert.match(text, /装着 2 份/);
+});
+
+test('formatInstallText 只有一份时仍按原样输出', () => {
+  const text = formatInstallText({ version: '0.6.0', prefix: 'C:/node/npm', onPath: true, skill: { skipped: 'x' } });
+  assert.match(text, /位置：C:\/node\/npm/);
+  assert.doesNotMatch(text, /多份并存/);
 });
 
 test('normalizePathEntry 把正斜杠和反斜杠当同一个目录', () => {

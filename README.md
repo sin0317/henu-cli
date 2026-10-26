@@ -51,6 +51,10 @@ npx henu-cli@latest install --prefix "C:\Users\me\AppData\Roaming\npm"
 
 > 从源码走也行：`npx -y github:sin0317/henu-cli install`，两条路径功能完全一致。
 
+**多份并存时会全部更新。** 一台机器上可能同时装着几份（不同应用各自托管的 node 都算一个前缀）。
+只更新其中一份是不够的 —— PATH 排在前面的旧副本会把刚装好的新版本挡住，你敲到的还是旧的。
+`install` 会把已存在的每一份都刷到同一版本，并在输出里列出来。
+
 **为什么先 `npm pack` 再装**：`npm install -g <目录>` 在 npm 7+ 会建符号链接，从 npx 临时缓存装的话，缓存一清全局命令就失效。所以 `install` 先打 tarball 再装 `.tgz`，落盘的是真副本。
 
 **Windows 上有个坑**：如果 `node` / `npm` 是某个应用自带的（比如 WorkBuddy、Trae 托管的 node），`npm config get prefix` 会指到那个应用的私有目录，装完的 `henu-cli.cmd` 只在该应用的运行环境里可见，你自己开 PowerShell 敲 `henu-cli` 会提示「不是内部或外部命令」。`install` 会检测到这点并自动改投 `%APPDATA%\npm`；也可以手动指定：

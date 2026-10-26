@@ -74,7 +74,8 @@ export function globalBinPath(prefix, platform = process.platform) {
  * 于是升级会散成两份（本机就出现过 0.3.0 与 0.4.0 并存、用户敲到的还是旧的）。
  * 已经有安装记录的前缀比 PATH 推断更可信。
  */
-export function findExistingPrefix(prefixes, { platform = process.platform, exists = existsSync } = {}) {
+export function findAllExistingPrefixes(prefixes, { platform = process.platform, exists = existsSync } = {}) {
+  const found = [];
   const seen = new Set();
   for (const prefix of prefixes) {
     if (!prefix) continue;
@@ -82,9 +83,30 @@ export function findExistingPrefix(prefixes, { platform = process.platform, exis
     if (seen.has(key)) continue;
     seen.add(key);
     const bin = globalBinPath(prefix, platform);
-    if (bin && exists(bin)) return prefix;
+    if (bin && exists(bin)) found.push(prefix);
   }
-  return null;
+  return found;
+}
+
+/**
+ * 按 PATH 先后顺序重排前缀。
+ *
+ * 决定「装到哪」时，真正重要的是用户敲 henu-cli 时命中哪一份：
+ * PATH 靠前的那份会把后面的全挡住。所以多份并存时按 PATH 排序，
+ * 而不是假定某个固定目录更优先。
+ */
+export function orderByPath(prefixes, { pathValue = process.env.PATH ?? '', platform = process.platform } = {}) {
+  const separator = platform === 'win32' ? ';' : ':';
+  const entries = pathValue.split(separator).filter(Boolean).map((entry) => normalizePathEntry(entry, platform));
+  const rank = (prefix) => {
+    const index = entries.indexOf(normalizePathEntry(prefix, platform));
+    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+  };
+  return [...prefixes].sort((a, b) => rank(a) - rank(b));
+}
+
+export function findExistingPrefix(prefixes, options = {}) {
+  return findAllExistingPrefixes(prefixes, options)[0] ?? null;
 }
 
 export function resolveSkillTargets(target) {
@@ -128,57 +150,64 @@ export async function installGlobal(options = {}) {
   const source = tarball ?? PACKAGE_ROOT;
 
   try {
-    // 2) 挑一个「装完就能直接用」的前缀
-    let prefix = options.prefix ?? null;
+    // 2) 挑「装完就能直接用」的前缀
+    let targets = options.prefix ? [options.prefix] : null;
     let needsExplicitPrefix = Boolean(options.prefix);
 
-    if (!prefix) {
+    if (!targets) {
       const defaultPrefix = await resolveGlobalPrefix(runNpm);
       const userPrefix = defaultUserPrefix({ platform });
 
-      // 「上次装哪就还装哪」优先于 PATH 推断：
-      // 进程 PATH 不等于用户终端 PATH，升级散成多份比选错目录更麻烦。
-      // 两份都有安装时优先用户级前缀——它不随 Node 版本目录变（本机 node 在
-      // versions/22.22.2-6 下，一升级那个前缀就成孤儿了）。
-      const existing = findExistingPrefix([userPrefix, defaultPrefix], { platform });
-      if (existing) {
-        prefix = existing;
-        needsExplicitPrefix = existing !== defaultPrefix;
-        if (existing !== defaultPrefix) {
-          warnings.push(`沿用已有的安装目录 ${existing}（不重复安装到 ${defaultPrefix ?? '(未知)'}）`);
+      const existing = orderByPath(
+        findAllExistingPrefixes([userPrefix, defaultPrefix], { platform }),
+        { platform }
+      );
+
+      if (existing.length > 0) {
+        // 已经装过的每一份都要更新到同一版本。
+        // 只更新一份是不行的：不同终端的 PATH 顺序不一样，
+        // 排在前面的旧副本会把刚装好的新版本挡住，用户敲到的还是旧的。
+        targets = existing;
+        needsExplicitPrefix = true;
+        if (existing.length > 1) {
+          warnings.push(`这台机器上装着 ${existing.length} 份，全部更新到 ${meta.version}（不必在意 PATH 里谁在前了）`);
         }
       } else if (isPrefixOnPath(defaultPrefix, { platform })) {
-        prefix = defaultPrefix;
+        targets = [defaultPrefix];
       } else if (userPrefix !== defaultPrefix && isPrefixOnPath(userPrefix, { platform })) {
-        prefix = userPrefix;
+        targets = [userPrefix];
         needsExplicitPrefix = true;
         warnings.push(`默认全局目录 ${defaultPrefix ?? '(未知)'} 不在 PATH 中，已改装到 ${userPrefix}`);
       } else {
-        prefix = userPrefix;
+        targets = [userPrefix];
         needsExplicitPrefix = true;
         warnings.push(`${userPrefix} 也不在 PATH 中，装完可能需要加入 PATH 或重开终端`);
       }
     }
 
-    const args = ['install', '--global', source];
-    if (needsExplicitPrefix) args.push('--prefix', prefix);
-    await runNpm(args);
+    for (const prefix of targets) {
+      const args = ['install', '--global', source];
+      if (needsExplicitPrefix) args.push('--prefix', prefix);
+      await runNpm(args);
 
-    const binPath = globalBinPath(prefix, platform);
-    if (binPath && !existsSync(binPath)) {
-      warnings.push(`未在 ${prefix} 找到 ${BIN_NAME} 可执行文件`);
+      const binPath = globalBinPath(prefix, platform);
+      if (binPath && !existsSync(binPath)) {
+        warnings.push(`未在 ${prefix} 找到 ${BIN_NAME} 可执行文件`);
+      }
     }
 
     // 3) 顺手装上随包 skill（失败只记 warning，不影响 CLI 安装结果）
     const skill = await installBundledSkill({ target: options.target, skip: options.skipSkill, warnings });
+    const primary = targets[0];
 
     return {
       installed: true,
       command: BIN_NAME,
       package: meta.name,
       version: meta.version,
-      prefix,
-      onPath: isPrefixOnPath(prefix, { platform }),
+      prefix: primary,
+      prefixes: targets,
+      onPath: targets.some((prefix) => isPrefixOnPath(prefix, { platform })),
       source: tarball ? 'tarball' : 'directory',
       skill,
       warnings
@@ -269,8 +298,14 @@ function spawnCapture(command, args, options = {}) {
 }
 
 export function formatInstallText(result) {
+  const all = result.prefixes?.length ? result.prefixes : [result.prefix];
   const lines = [`henu-cli ${result.version} 已安装`];
-  lines.push(`  位置：${result.prefix ?? '(未知)'}`);
+  if (all.length > 1) {
+    lines.push('  位置（多份并存，都已更新到同一版本）：');
+    for (const prefix of all) lines.push(`    ${prefix}`);
+  } else {
+    lines.push(`  位置：${result.prefix ?? '(未知)'}`);
+  }
   lines.push(`  PATH：${result.onPath ? '已可用，直接运行 henu-cli' : '不在 PATH 中，需重开终端或手动加入 PATH'}`);
 
   if (result.skill?.installed) {
