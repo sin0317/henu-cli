@@ -56,6 +56,7 @@ node <项目目录>/src/cli.js <同样的参数>
 henu-cli doctor              # 环境、浏览器、网络
 henu-cli auth status         # 登录态是否有效
 henu-cli course today        # 今天的课
+henu-cli course next         # 下一节课：哪门、几点、在哪、还有多久（回答「我接下来上什么」优先用它）
 henu-cli course list         # 本学期全部课表
 henu-cli course list --weekday 3   # 只看周三（1=周一 … 7=周日）
 ```
@@ -155,6 +156,7 @@ henu-cli grade plan                 # 内置培养方案要求，先看它有哪
 henu-cli grade list                 # 入学以来全部成绩（有效成绩 + 主修）
 henu-cli grade audit                # 对照培养方案核对缺口
 henu-cli grade audit --text         # 人读核对表，适合直接念给用户
+henu-cli grade gpa                  # 平均学分绩点、加权平均分、按平台绩点（保研/评奖学金场景）
 ```
 
 `grade audit` 的关键字段：
@@ -277,7 +279,7 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 ## 当前实现状态
 
 已实现：`doctor`、`auth login|status|logout`、`browser status|use|install`、
-`course list|today|ics|status`、`room grid|free|options`、`grade list|audit|plan`、
+`course list|today|next|ics|status`、`room grid|free|options`、`grade list|gpa|audit|plan`、
 `plan depts|majors|show|audit`、`second standard|check`、`exam tabs`、
 `notice list|search|show`、`library search|account|seat`、`install`、`skill path|install`。
 
