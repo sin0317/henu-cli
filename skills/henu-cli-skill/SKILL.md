@@ -30,11 +30,20 @@ description: 河南大学校园服务命令行工具的使用指南。当用户�
 先确认命令本身可用：
 
 ```bash
-henu-cli --version           # 输出 0.2.x 表示已安装
+henu-cli --version           # 输出 0.3.x 表示已安装
 ```
 
-如果提示 `henu-cli: command not found` / 「不是内部或外部命令」，说明没全局安装，
-**不要自己 `npm install -g`**（可能污染环境），改用项目里的入口脚本：
+如果提示 `henu-cli: command not found` / 「不是内部或外部命令」，说明没全局安装。
+这时**把安装命令交给用户自己在终端执行**，不要代为运行：
+
+```bash
+npx -y github:sin0317/henu-cli install
+```
+
+（它会全局装 CLI 并把本 skill 拷到 `~/.workbuddy/skills/`；装完要新开一个会话，
+Agent 才能在技能列表里看到它。）
+
+在装好之前，用项目里的入口脚本代替：
 
 ```bash
 node <项目目录>/src/cli.js <同样的参数>
@@ -270,7 +279,7 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 已实现：`doctor`、`auth login|status|logout`、`browser status|use|install`、
 `course list|today|ics|status`、`room grid|free|options`、`grade list|audit|plan`、
 `plan depts|majors|show|audit`、`second standard|check`、`exam tabs`、
-`notice list|search|show`、`library search|account|seat`、`skill path|install`。
+`notice list|search|show`、`library search|account|seat`、`install`、`skill path|install`。
 
 课表、空教室、成绩、学分核对、培养方案（含跨专业）、公文通、图书馆均已在真实数据下校准通过
 （2026-2027-1 学期，2023 级药学；跨专业实测药学 95 门 / 239.5 学分、金融学 71 门 / 178 学分；

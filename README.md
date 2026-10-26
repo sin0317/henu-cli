@@ -19,34 +19,39 @@ node src/cli.js auth login
 node src/cli.js course today
 ```
 
-全局安装后可直接用 `henu-cli`：
+一条命令装好 CLI + skill：
 
 ```bash
-npm install --global .
-henu-cli doctor
+npx -y github:sin0317/henu-cli install
 ```
 
-**Windows 上有个坑**：如果你的 `node` / `npm` 是某个应用自带的（比如 WorkBuddy、Trae 托管的
-node），`npm config get prefix` 会指到那个应用的私有目录，装完的 `henu-cli.cmd` 只在该应用的
-运行环境里可见，你自己开 PowerShell 敲 `henu-cli` 会提示「不是内部或外部命令」。
-这时改投 Windows 用户级目录（默认就在 PATH 上）：
+它会做三件事：把 CLI 装进 npm 全局前缀、自动挑一个**已经在 PATH 上**的前缀（Windows 下默认目录不可见时改投 `%APPDATA%\npm`）、把随包 skill 拷到 `~/.workbuddy/skills/`。
+
+常用变体：
+
+```bash
+npx -y github:sin0317/henu-cli install --text         # 人类可读输出
+npx -y github:sin0317/henu-cli install --no-skill     # 只装 CLI
+npx -y github:sin0317/henu-cli install --target all   # skill 装到所有支持的 Agent 目录
+npx -y github:sin0317/henu-cli install --prefix "C:\Users\me\AppData\Roaming\npm"
+```
+
+> `npx henu-cli@latest install` 要等包发布到 npm 才有，目前用上面的 GitHub 直连写法。
+
+**为什么先 `npm pack` 再装**：`npm install -g <目录>` 在 npm 7+ 会建符号链接，从 npx 临时缓存装的话，缓存一清全局命令就失效。所以 `install` 先打 tarball 再装 `.tgz`，落盘的是真副本。
+
+**Windows 上有个坑**：如果 `node` / `npm` 是某个应用自带的（比如 WorkBuddy、Trae 托管的 node），`npm config get prefix` 会指到那个应用的私有目录，装完的 `henu-cli.cmd` 只在该应用的运行环境里可见，你自己开 PowerShell 敲 `henu-cli` 会提示「不是内部或外部命令」。`install` 会检测到这点并自动改投 `%APPDATA%\npm`；也可以手动指定：
 
 ```powershell
 npm install --global . --prefix "$env:APPDATA\npm"
 ```
 
-注意全局安装是**复制**，改完源码要重装一次才会生效：
+全局安装是**复制**，改完源码要重装一次才生效：`node src/cli.js install`。或者开发时干脆用 `node src/cli.js <命令>` / `npm run henu-cli -- <命令>`，跳过安装。
+
+只装 skill（不动 CLI）：
 
 ```bash
-npm install --global . --prefix "$env:APPDATA\npm"   # 刷新
-```
-
-或者开发时干脆用 `node src/cli.js <命令>` / `npm run henu-cli -- <命令>`，跳过安装。
-
-给 AI Agent 装 skill：
-
-```bash
-henu-cli skill install --target workbuddy
+henu-cli skill install --target workbuddy|claude|codex|cursor|all
 ```
 
 skill 会拷到 `~/.workbuddy/skills/henu-cli-skill/`。**技能列表在会话启动时扫描**，
@@ -67,7 +72,8 @@ skill 会拷到 `~/.workbuddy/skills/henu-cli-skill/`。**技能列表在会话�
 | `exam tabs` | 列出「课程考试」模块的真实入口（河大没有考试安排查询） |
 | `notice list` / `search` / `show` | 公文通：学校公告、学术公告、教务处通知，支持标题检索 |
 | `library search` / `account` / `seat` | 图书馆：馆藏检索、我的借阅、座位空闲 |
-| `skill path` / `install` | 随包 skill 的管理 |
+| `install` | 全局安装 CLI + 随包 skill（一条命令装好） |
+| `skill path` / `install` | 只管理随包 skill |
 
 常用参数：`--headed` 显示浏览器窗口排障，`--dump` 写诊断文件，`--weekday 1-7` 按星期过滤，
 `--text` 输出人类可读文本（默认是 JSON）。

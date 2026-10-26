@@ -12,7 +12,7 @@ import { formatIcsSummaryText } from './modules/ics.js';
 import { getDoctorReport } from './modules/doctor.js';
 import { formatExamTabsText, getExamCapabilities } from './modules/exam.js';
 import { formatAuditText, formatGradeText, getGradeAudit, getGradeList } from './modules/grade.js';
-import { installGlobal } from './modules/install.js';
+import { formatInstallText, installGlobal, resolveSkillTargets } from './modules/install.js';
 import { getLibraryAccount, getSeatAvailability, searchLibrary } from './modules/library.js';
 import { formatAccountText, formatSearchText, formatSeatText } from './modules/library-parser.js';
 import {
@@ -126,8 +126,10 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
 
 其他
   skill path                             打印随包 skill 路径
-  skill install [--target ${getSkillTargets().join('|')}]
-  install                                全局安装本 CLI
+  skill install [--target ${getSkillTargets().join('|')}|all]
+                                         只安装随包 skill
+  install [--target ${getSkillTargets().join('|')}|all] [--no-skill] [--prefix <目录>] [--text]
+                                         全局安装本 CLI，并顺手装上随包 skill
 
 说明：
   - 不保存账号密码，登录由你在浏览器里完成，CLI 只复用登录态。
@@ -151,8 +153,17 @@ export async function run(argv) {
   const rest = argv.slice(2);
 
   switch (domain) {
-    case 'install':
-      return emit('install', () => installGlobal());
+    case 'install': {
+      const options = {
+        target: getOption(argv, '--target'),
+        prefix: getOption(argv, '--prefix'),
+        skipSkill: hasFlag(argv, '--no-skill')
+      };
+      if (hasFlag(argv, '--text')) {
+        return emitText('install', () => installGlobal(options), formatInstallText);
+      }
+      return emit('install', () => installGlobal(options));
+    }
 
     case 'doctor':
       return emit('doctor', () => getDoctorReport({ verbose: hasFlag(argv, '--verbose') }));
@@ -527,9 +538,19 @@ function handleSkill(action, rest) {
     return 0;
   }
   if (action === 'install') {
-    return emit('skill.install', () => installSkill({ target: getOption(rest, '--target') ?? 'workbuddy' }));
+    return emit('skill.install', async () => {
+      const targets = resolveSkillTargets(getOption(rest, '--target'));
+      const installed = [];
+      for (const target of targets) {
+        const result = await installSkill({ target });
+        installed.push({ target, destination: result.destination });
+      }
+      return installed.length === 1
+        ? { installed: true, ...installed[0] }
+        : { installed: true, targets: installed };
+    });
   }
-  return usageError('skill 子命令：path | install --target <name>');
+  return usageError('skill 子命令：path | install [--target <name>|all]');
 }
 
 async function emit(command, task, meta = {}) {
