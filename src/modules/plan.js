@@ -1,5 +1,3 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { HENU } from '../config.js';
 import { SECOND_CLASSROOM } from '../second-classroom.js';
@@ -7,8 +5,8 @@ import { assertBrowserAvailable } from './browser.js';
 import { getLaunchOptions, importPlaywright } from './browser-options.js';
 import { openJwPage, openJwTabApp } from './jw.js';
 import { round, groupPlan, parsePlanRows, formatPlanText } from './plan-parser.js';
-import { getRequestId } from './output.js';
-import { getHenuHome, getProfilePath } from './paths.js';
+import { getRequestId, writeDiagnostics } from './output.js';
+import { getProfilePath } from './paths.js';
 
 // 教务系统的「专业培养方案达成度」页可以选任意 院系 / 专业 / 年级，
 // 提交到 /taglib/DataTable.jsp?tableId=xxx，返回该专业完整方案课程清单，
@@ -434,12 +432,8 @@ function planEmpty(target) {
 }
 
 export function dumpPlanDiagnostics(frameRows) {
-  const home = getHenuHome();
-  mkdirSync(home, { recursive: true });
-  const file = join(home, 'diagnostics-plan.json');
   // 原来是裸数组，包一层才能带上 requestId（只能靠它把 dump 和报错对上）
-  writeFileSync(file, `${JSON.stringify({ requestId: getRequestId(), frames: frameRows }, null, 2)}\n`, 'utf8');
-  return file;
+  return writeDiagnostics('plan', { requestId: getRequestId(), frames: frameRows });
 }
 
 export { formatPlanText };

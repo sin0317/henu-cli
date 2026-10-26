@@ -1,5 +1,3 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { HENU } from '../config.js';
 import { assertBrowserAvailable } from './browser.js';
@@ -7,8 +5,8 @@ import { getLaunchOptions, importPlaywright } from './browser-options.js';
 import { CACHE_KEYS, CACHE_TTL, readThroughCache } from './cache.js';
 import { extractTerm, filterByWeekday, parseTimetableTable } from './course-parser.js';
 import { openJwMenuApp, openJwPage } from './jw.js';
-import { getRequestId } from './output.js';
-import { getHenuHome, getProfilePath } from './paths.js';
+import { getRequestId, writeDiagnostics } from './output.js';
+import { getProfilePath } from './paths.js';
 
 export async function getCourseList(options = {}) {
   const loaded = await loadTimetableCached(options);
@@ -190,10 +188,7 @@ function throwUnrecognized(pageState, details = {}) {
 }
 
 function dumpDiagnostics({ pageState, nav, table, frameUrls }) {
-  const home = getHenuHome();
-  mkdirSync(home, { recursive: true });
-  const file = join(home, 'diagnostics-course.json');
-  writeFileSync(file, `${JSON.stringify({
+  const file = writeDiagnostics('course', {
     requestId: getRequestId(),
     finalUrl: pageState.url,
     title: pageState.title,
@@ -202,6 +197,6 @@ function dumpDiagnostics({ pageState, nav, table, frameUrls }) {
     header: table?.header ?? null,
     rowCount: table?.rows?.length ?? 0,
     sampleRows: (table?.rows ?? []).slice(0, 2)
-  }, null, 2)}\n`, 'utf8');
+  });
   process.stderr.write(`diagnostics written to ${file}\n`);
 }

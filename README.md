@@ -85,6 +85,7 @@ skill 会拷到 `~/.workbuddy/skills/henu-cli-skill/`。**技能列表在会话�
 | `exam tabs` | 列出「课程考试」模块的真实入口（河大没有考试安排查询） |
 | `notice list` / `search` / `show` | 公文通：学校公告、学术公告、教务处通知，支持标题检索 |
 | `library search` / `account` / `seat` | 图书馆：馆藏检索、我的借阅、座位空闲 |
+| `library seminar areas` / `dates` / `rooms` | 图书馆研讨室：楼层、可预约日期、某天的可用时段 |
 | `install` | 全局安装 CLI + 随包 skill（一条命令装好） |
 | `skill path` / `install` | 只管理随包 skill |
 | `cache status` / `clear` | 看/清本地缓存（课表、成绩的离线副本） |
@@ -466,6 +467,63 @@ henu-cli library seat --day 2026-10-27 --campus 金明 --text
 
 座位和空间预约的入口都在 `zwyy.henu.edu.cn`（超星），这是同一套书库账号体系；
 `library seat` 只读校区/楼层空闲数，**不下单、不占座**。
+
+### 研讨室（`library seminar`）
+
+和「座位预约」是同一套 zwyy 系统里的另一块（空间预约），但接口分开了。
+
+```bash
+# 哪些校区/楼层有研讨室、开放时间与人数规则 —— 免登录
+henu-cli library seminar areas --text
+
+# 哪些日子开放预约（通常是今天起连续 5 天）—— 免登录
+henu-cli library seminar dates --text
+
+# 某天每间研讨室的开放时间、已约时段、算出来的可约时段 —— 需要登录
+henu-cli library seminar rooms --date 2026-10-27 --text
+
+# 6 个人开会：留下装得下 6 人、且当天还有空档的房间
+henu-cli library seminar rooms --date 2026-10-27 --seats 6 --free-only --text
+```
+
+真实输出（2026-10-27 查询）：
+
+```text
+图书馆研讨室 · 2026-10-27
+
+金明校区 / 金明三楼
+  [53] 研讨间301 · 4-8 人 · 开放 08:00-22:00
+       可约 08:00-08:30、12:15-15:00、17:00-18:00、20:00-20:45、21:45-22:00（共 5 小时 15 分）
+       已约 08:30-10:30、10:30-12:15、15:00-17:00、18:00-20:00、20:45-21:45
+明伦校区 / 明伦四层
+  [68] 东馆四楼研讨间 · 5-10 人 · 开放 08:00-22:00
+       可约 08:00-22:00（共 14 小时 0 分）
+```
+
+#### 研讨室的三个坑
+
+1. **「可约时段」是算出来的。** 接口只给「已被预约」的时段列表，不直接给空档。
+   `available` = 开放区间减去已占用，相邻占用先合并，答案里的起点就是被占时间块的终点。
+2. **`xx:59:59` 要进位。** 接口把「占到 17:00」写成 `16:59:59`，`end_num` 也只有 1019。
+   不进位的话 16:59~17:00 会被当成 1 分钟空档，看着像能约，实际约不了。
+3. **room 之外的两个子命令不需要登录，`rooms` 需要。**
+   `sift` / `siftdate` 是公开的；`list` / `detail` / `seminar` 不带 `authorization: bearer<token>`
+   一律返回 `code:10001 您尚未登录`。token 的取得方式写在下面。
+
+> **预约本身不要交给本工具。** `library seminar rooms` 只查时间表，下单、成员组、签到仍要在
+> 学校系统里点 —— 这跟我们不代替你提交选课、不发场馆预约的道理是一样的。
+
+### zwyy 的登录态怎么来的（为什么不存你的密码）
+
+图书馆/座位/研讨室这套系统的 token 既不在 cookie 里，也不需要你在命令行里提交密码：
+
+1. 用带 CAS 登录态的浏览器 profile 打开 `zwyy.henu.edu.cn/h5/index.html`
+2. 页面自己发现没登录 → 跳 CAS → 因为浏览器里已有统一身份认证会话，一路 302 回来
+3. 前端拿 `ticket` 调 `/v4/login/user` 换成 JWT，写进 `sessionStorage.token`
+4. CLI 把 JWT 读出来，之后所有请求带 `authorization: bearer<JWT>` 直连
+
+token 只在内存里传递，**不落盘**；失效时最多重新取一次再重试，不循环重试 ——
+遇到「需要验证码」时循环重试只会把人锁在外面。
 
 ## 河南大学系统对照
 

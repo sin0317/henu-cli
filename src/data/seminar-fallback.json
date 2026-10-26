@@ -1,0 +1,33 @@
+{
+  "verified_at": "2026-10-26",
+  "note": "2026-10-26 抓到的快照。只在 interface 不可用、或用户只想问「研讨室在哪」时兜底；楼层清单很不常变，但「当天能不能约」必须看实时接口。",
+  "campuses": [
+    {
+      "id": "1",
+      "name": "金明校区",
+      "enname": "Jinming Campus",
+      "storeys": [
+        { "id": "3", "name": "金明三楼", "enname": "3F" }
+      ]
+    },
+    {
+      "id": "32",
+      "name": "明伦校区",
+      "enname": "Minglun Campus",
+      "storeys": [
+        { "id": "35", "name": "明伦四层", "enname": "4F" },
+        { "id": "36", "name": "明伦五层", "enname": "5F" }
+      ]
+    }
+  ],
+  "facilities": [
+    { "id": "2", "name": "耳语" },
+    { "id": "15", "name": "电源" },
+    { "id": "21", "name": "人体工学座椅" },
+    { "id": "22", "name": "WIFI开放" }
+  ],
+  "rules": {
+    "open": { "start": "08:00", "end": "22:00" },
+    "members": { "min": 0, "max": 10, "step": 1 }
+  }
+}

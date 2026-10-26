@@ -6,6 +6,12 @@ export async function readPageState(page) {
   };
 }
 
+// 只在需要按 HTML 判定（比如读 CAS 页面上的报错容器）时才用，
+// 比 readPageState 重得多，别放进常规探测路径。
+export async function readPageHtml(page) {
+  return page.content().catch(() => '');
+}
+
 // 等页面从“加载中”稳定下来，避免在 SPA 还没渲染时读取 DOM。
 export async function settlePage(page, options = {}) {
   const deadline = Date.now() + (options.timeoutMs ?? 8000);

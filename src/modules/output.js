@@ -1,4 +1,9 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+
+import { redactSecrets } from './redact.js';
+import { getHenuHome } from './paths.js';
 
 /**
  * 生成一次执行的对账 id。
@@ -59,8 +64,28 @@ export function errorEnvelope(error, meta = {}) {
   };
 }
 
+/**
+ * 写出去之前统一脱敏。
+ *
+ * 为什么要在这里做而不是在数据层：模块内部要拿 token / ticket 去调下一个接口，
+ * 数据源就打码会连自己一起堵死。只有「要落到 stdout」这一步才需要拦。
+ * 诊断文件同样走这里，所以贴 dump 也不会把票据漏出去。
+ */
 export function writeJson(payload) {
-  process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(redactSecrets(payload), null, 2)}\n`);
+}
+
+/**
+ * 写诊断文件（--dump 用的那几个）。
+ * 同样过一遍脱敏：这些文件会被直接贴到 issue 里，而 pageState / 响应片段里
+ * 可能带着 CAS 票据或 sessionid。
+ */
+export function writeDiagnostics(name, payload) {
+  const home = getHenuHome();
+  mkdirSync(home, { recursive: true });
+  const file = join(home, `diagnostics-${name}.json`);
+  writeFileSync(file, `${JSON.stringify(redactSecrets(payload), null, 2)}\n`, 'utf8');
+  return file;
 }
 
 /**

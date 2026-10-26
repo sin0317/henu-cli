@@ -1,5 +1,3 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { HENU } from '../config.js';
 import { assertBrowserAvailable } from './browser.js';
@@ -18,8 +16,8 @@ import {
   resolveWeekdayRange,
   roomGridForWeekday
 } from './room-parser.js';
-import { getRequestId } from './output.js';
-import { getHenuHome, getProfilePath } from './paths.js';
+import { getRequestId, writeDiagnostics } from './output.js';
+import { getProfilePath } from './paths.js';
 
 export async function getFreeRooms(options = {}) {
   const built = buildRoomQuery({
@@ -456,10 +454,7 @@ function throwUnrecognized(pageState, details = {}) {
 }
 
 function dumpDiagnostics({ pageState, nav, overrides, periods, responses, groups }) {
-  const home = getHenuHome();
-  mkdirSync(home, { recursive: true });
-  const file = join(home, 'diagnostics-room.json');
-  writeFileSync(file, `${JSON.stringify({
+  const file = writeDiagnostics('room', {
     requestId: getRequestId(),
     finalUrl: pageState.url,
     nav,
@@ -474,6 +469,6 @@ function dumpDiagnostics({ pageState, nav, overrides, periods, responses, groups
     })),
     groupCount: groups.length,
     sampleGroup: groups[0] ?? null
-  }, null, 2)}\n`, 'utf8');
+  });
   process.stderr.write(`diagnostics written to ${file}\n`);
 }

@@ -133,6 +133,21 @@ export const HENU = {
       base: 'https://zwyy.henu.edu.cn',
       home: 'https://zwyy.henu.edu.cn/h5/index.html#/mo/home',
       campusApi: '/v4/space/pcTopFor'
+    },
+
+    // 研讨室（同一套 zwyy 系统里的「空间预约」）。
+    // 实测结论（2026-10）：
+    //   sift / siftdate 免登录可读，返回「校区-楼层」树、可预约日期、开放时间与人数区间；
+    //   list / detail / seminar 必须带 authorization: bearer<token>，否则恒为 code:10001。
+    // token 的产生方式：用带 CAS 登录态的浏览器 profile 打开 h5 首页，
+    // 页面自己走完 CAS 单点后把 JWT 写进 sessionStorage.token（详见 zwyy-session.js）。
+    seminar: {
+      // 校区-楼层树 + 设施标签 + 人数/时间规则 + 可预约日期（免登录）
+      siftApi: '/v4/seminar/sift',
+      // 只有可预约日期（免登录）
+      datesApi: '/v4/seminar/siftdate',
+      // 房间清单与占用时段（需登录）
+      listApi: '/v4/seminar/list'
     }
   }
 };

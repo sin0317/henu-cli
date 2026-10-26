@@ -52,6 +52,14 @@ import {
   formatSecondCheckText,
   formatSecondStandardText
 } from './second-classroom.js';
+import {
+  formatSeminarAreasText,
+  formatSeminarDatesText,
+  formatSeminarRoomsText,
+  getSeminarAreas,
+  getSeminarDates,
+  getSeminarRooms
+} from './modules/seminar.js';
 import { getSkillPath, installSkill, getSkillTargets } from './modules/skill.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -140,6 +148,13 @@ const HELP = `henu-cli —— 河南大学校园服务的命令行工具（面�
                                          我的借阅：证件状态、可借数、当前借阅、借阅历史
   library seat [--day 2026-10-27] [--campus 金明|明伦] [--text]
                                          座位预约各校区/楼层空闲数
+  library seminar areas [--campus 金明|明伦] [--text]
+                                         研讨室在哪些校区/楼层、开放时间与人数规则（无需登录）
+  library seminar dates [--text]         哪些日子开放预约（无需登录）
+  library seminar rooms [--date 2026-10-27] [--campus 金明] [--seats 6] [--free-only]
+                        [--headed] [--text]
+                                         某天各研讨室的开放时间、已约时段、算出来的可约时段
+                                         （需要登录；预约本身要去学校系统点）
 
 本地缓存
   cache status [--text]                  看缓存了哪些数据、多久前写的、占多大
@@ -222,7 +237,9 @@ export async function run(argv) {
       return handleNotice(action, rest, argv);
 
     case 'library':
-      return handleLibrary(action, rest, argv);
+      return action === 'seminar'
+        ? handleSeminar(firstPositional(rest), rest.slice(1), argv)
+        : handleLibrary(action, rest, argv);
 
     case 'skill':
       return handleSkill(action, rest);
@@ -573,7 +590,39 @@ function handleLibrary(action, rest, argv) {
     return emit('library.seat', () => getSeatAvailability(options), meta);
   }
 
-  return usageError('library 子命令：search <检索词> | account | seat');
+  return usageError('library 子命令：search <检索词> | account | seat | seminar');
+}
+
+function handleSeminar(action, rest, argv) {
+  const text = hasFlag(argv, '--text');
+
+  if (action === 'areas') {
+    const options = { campus: getOption(argv, '--campus') };
+    return text
+      ? emitText('library.seminar.areas', () => getSeminarAreas(options), formatSeminarAreasText, { backend: 'http' })
+      : emit('library.seminar.areas', () => getSeminarAreas(options), { backend: 'http' });
+  }
+
+  if (action === 'dates') {
+    return text
+      ? emitText('library.seminar.dates', () => getSeminarDates(), formatSeminarDatesText, { backend: 'http' })
+      : emit('library.seminar.dates', () => getSeminarDates(), { backend: 'http' });
+  }
+
+  if (action === 'rooms') {
+    const options = {
+      headless: !hasFlag(argv, '--headed'),
+      date: getOption(argv, '--date'),
+      campus: getOption(argv, '--campus'),
+      seats: getOption(argv, '--seats'),
+      freeOnly: hasFlag(argv, '--free-only')
+    };
+    return text
+      ? emitText('library.seminar.rooms', () => getSeminarRooms(options), formatSeminarRoomsText, { backend: 'http' })
+      : emit('library.seminar.rooms', () => getSeminarRooms(options), { backend: 'http' });
+  }
+
+  return usageError('library seminar 子命令：areas | dates | rooms');
 }
 
 function handleSkill(action, rest) {

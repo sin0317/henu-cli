@@ -3,10 +3,11 @@ import { mkdir, rm } from 'node:fs/promises';
 
 import { AUTH_CHECK_URL, CAS_CHECK_URL, HENU } from '../config.js';
 import { classifyAuthPage } from './auth-detector.js';
+import { describeCasPage } from './cas-errors.js';
 import { assertBrowserAvailable, getSelectedBrowser } from './browser.js';
 import { getLaunchOptions, importPlaywright } from './browser-options.js';
 import { getProfilePath } from './paths.js';
-import { readPageState, settlePage } from './page.js';
+import { readPageHtml, readPageState, settlePage } from './page.js';
 
 export async function loginWithBrowserProfile(options = {}) {
   const browser = getSelectedBrowser();
@@ -114,7 +115,15 @@ async function probe(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await settlePage(page, { timeoutMs: 5000 });
   const state = await readPageState(page);
-  return { ...classifyAuthPage(state), finalUrl: state.url };
+  const verdict = classifyAuthPage(state);
+
+  // 停在 CAS 登录页时，页面上通常写着原因（账号或密码错误 / 需要验证码 / 账号已锁定）。
+  // 把它读出来给用户，比让用户对着 'cas-login-page' 这个词猜要强。
+  const casMessage = !verdict.loggedIn && verdict.reason === 'cas-login-page'
+    ? describeCasPage(await readPageHtml(page))
+    : '';
+
+  return { ...verdict, finalUrl: state.url, ...(casMessage ? { casMessage } : {}) };
 }
 
 function withLoginHint(status) {
@@ -122,6 +131,10 @@ function withLoginHint(status) {
     switch (status.reason) {
       case 'profile-missing':
         return '还没有登录过，先运行 henu-cli auth login。';
+      case 'cas-login-page':
+        return status.casMessage
+          ? `页面写着「${status.casMessage}」。确认后重新运行 henu-cli auth login。`
+          : '停在统一身份认证登录页，运行 henu-cli auth login 登录一次。';
       case 'cas-session-only':
         return '统一身份认证已登录，但教务系统会话尚未建立；直接运行 course list 会自动单点。';
       case 'unknown':

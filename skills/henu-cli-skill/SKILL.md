@@ -270,6 +270,31 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 
 `library account` 需要登录态（复用浏览器里的 CAS 会话）；`library search` / `seat` 是公开接口，很快。
 
+### 研讨室（`library seminar`）
+
+用户问"图书馆有没有可以小组讨论的房间""研讨室怎么约""明天下午有没有空房间"时用这三个。
+它和 `library seat` 是同一套 zwyy 系统里的不同模块 —— 座位是个人座，研讨室是小组间，别混着答。
+
+```bash
+henu-cli library seminar areas --text                    # 哪些校区/楼层有研讨室（免登录）
+henu-cli library seminar areas --campus 明伦 --text
+henu-cli library seminar dates --text                    # 哪些日子开放预约（免登录）
+henu-cli library seminar rooms --date 2026-10-27 --text  # 当天空档（需登录）
+henu-cli library seminar rooms --seats 6 --free-only --text
+```
+
+- `areas` / `dates` 免登录，可以直接答。
+- `rooms` 需要登录态。出错若返回 `AUTH_REQUIRED`，引导用户 `henu-cli auth login`，**不要反复重试**。
+- 每间房同时给 `occupied`（已约）和 `available`（可约）。**答"有没有空"要念 `available` 的时间段**，
+  `available` 为空就说"这天约满了"，不要把 `occupied` 当成空档说反。
+- `available` 是 CLI 算出来的：开放区间减去已占用。相邻占用先合并，所以空档之间必有间隔。
+- `capacity.min/max` 是人数的下限/上限。用户说"我们 6 个人"时用 `--seats 6` 过滤，
+  或者直接看 `capacity.min <= 人数 <= capacity.max`。
+- 研讨室开放时间一般是 08:00-22:00，单间 4-10 人，可约日期是从今天起连续 5 天。
+  这些写在 `areas` 的 `rules` 里，别硬背，接口会给。
+- **预约本身不在本工具里做。** 只能告诉用户几点有空、房间叫什么（房间名里有楼层，
+  "研讨间301 / 金明三楼"就是完整指路信息），下单要去学校系统点。
+
 ## 错误码处理与报障
 
 失败响应里 `error.hint` **一定有内容**，它就是「下一步做什么」。转述给用户时要说 hint，
@@ -305,17 +330,20 @@ henu-cli library seat --campus 金明 --text     # 只看一个校区
 已实现：`doctor`、`auth login|status|logout`、`browser status|use|install`、
 `course list|today|next|ics|status`、`room grid|free|options`、`grade list|gpa|audit|plan`、
 `plan depts|majors|show|audit`、`second standard|check`、`exam tabs`、
-`notice list|search|show`、`library search|account|seat`、`install`、`skill path|install`。
+`notice list|search|show`、`library search|account|seat`、`library seminar areas|dates|rooms`、
+`install`、`skill path|install`。
 
 课表、空教室、成绩、学分核对、培养方案（含跨专业）、公文通、图书馆均已在真实数据下校准通过
 （2026-2027-1 学期，2023 级药学；跨专业实测药学 95 门 / 239.5 学分、金融学 71 门 / 178 学分；
 馆藏检索「药物化学」题名命中 121 条；座位 2026-10-26 金明校区空闲 2337 / 3312；
+研讨室 2026-10-27 全楼 6 间，空闲最长的是明伦四层东馆四楼研讨间（08:00-22:00 全空）；
 课表导出 4 个日程 / 2 个上课时段，跨 10 月 1 日自动拆成夏令+冬令两段）。
 
 尚未实现的部分，原因不同，别混：
 
 - **考试安排**：河大教务系统学生端没有入口（已穷举确认），不是没做
-- **图书馆续借/预约座位**：接口已摸清但属于写操作，当前只做只读；需要时按"默认只读 + 显式确认"补
+- **图书馆续借 / 预约座位 / 预约研讨室**：接口已摸清但属于写操作，当前只做只读。
+  研讨室已经能查到「哪间几点有空」，但下单、成员组、签到不在工具里做，让用户去系统点
 - **宿舍电费 / 体育场馆**：河大走「完美校园」「今日校园」App，没有网页端，不做
 - **知网 / 万方**：需要机构订阅与校内 IP，属于授权范围问题，不在这个工具里做
 

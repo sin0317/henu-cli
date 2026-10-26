@@ -1,5 +1,3 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { HENU } from '../config.js';
 import { CURRICULUM } from '../curriculum.js';
@@ -15,8 +13,8 @@ import {
   summarizeByCategory
 } from './grade-parser.js';
 import { openJwPage, openJwTabApp } from './jw.js';
-import { getRequestId } from './output.js';
-import { getHenuHome, getProfilePath } from './paths.js';
+import { getRequestId, writeDiagnostics } from './output.js';
+import { getProfilePath } from './paths.js';
 
 /**
  * 成绩走本地缓存（默认保鲜 12 小时）。
@@ -387,10 +385,7 @@ function throwUnrecognized(pageState, details = {}) {
 }
 
 function dumpDiagnostics({ pageState, nav, scope, tables, html }) {
-  const home = getHenuHome();
-  mkdirSync(home, { recursive: true });
-  const file = join(home, 'diagnostics-grade.json');
-  writeFileSync(file, `${JSON.stringify({
+  const file = writeDiagnostics('grade', {
     requestId: getRequestId(),
     finalUrl: pageState.url,
     title: pageState.title,
@@ -400,7 +395,7 @@ function dumpDiagnostics({ pageState, nav, scope, tables, html }) {
     headers: tables.map((rows) => rows[0] ?? []),
     sampleRows: tables.map((rows) => rows[1] ?? []),
     htmlHead: html.slice(0, 4000)
-  }, null, 2)}\n`, 'utf8');
+  });
   process.stderr.write(`diagnostics written to ${file}\n`);
 }
 
