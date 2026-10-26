@@ -1,5 +1,7 @@
 # henu-cli
 
+[![test](https://github.com/sin0317/henu-cli/actions/workflows/test.yml/badge.svg)](https://github.com/sin0317/henu-cli/actions/workflows/test.yml)
+
 面向 AI Agent 的河南大学校园服务命令行工具。设计参考 [szu-cli](https://github.com/AwesomeHou/szu-cli)（MIT）。
 
 - 不保存账号密码：登录由你在浏览器里完成，CLI 只复用本地持久化 profile
